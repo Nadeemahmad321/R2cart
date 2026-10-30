@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "956726339705",
+    "project_id": "r2cart",
+    "storage_bucket": "r2cart.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:956726339705:android:d83d1c49b5c2a4f68e3f9a",
+        "android_client_info": {
+          "package_name": "com.r2cart"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQqxZNs_VMinPTgI0JgbFfsQ7JGQriBLw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+
