@@ -82,31 +82,32 @@ const formatDateTime = (val: any) => {
   });
 };
 
-const getStatusBadge = (status: string) => {
+const getStatusBadge = (status: string, tStatus?: (s: string) => string) => {
   const s = (status || '').toUpperCase();
+  const label = tStatus ? tStatus(status) : status;
   if (['DELIVERED', 'COMPLETED'].includes(s)) {
-    return { text: 'Delivered', bg: Colors.primaryLight, color: Colors.primaryDark, border: Colors.primaryBorder };
+    return { text: label || 'Delivered', bg: Colors.primaryLight, color: Colors.primaryDark, border: Colors.primaryBorder };
   }
   if (['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED'].includes(s)) {
-    return { text: 'Cancelled', bg: '#FEF2F2', color: '#991B1B', border: '#FEE2E2' };
+    return { text: label || 'Cancelled', bg: '#FEF2F2', color: '#991B1B', border: '#FEE2E2' };
   }
   if (['OUT_FOR_DELIVERY', 'IN_TRANSIT', 'OUT FOR DELIVERY'].includes(s)) {
-    return { text: 'Out for Delivery', bg: Colors.primaryLight, color: Colors.primary, border: Colors.primaryBorder };
+    return { text: label || 'Out for Delivery', bg: Colors.primaryLight, color: Colors.primary, border: Colors.primaryBorder };
   }
   if (['PACKING', 'PACKED'].includes(s)) {
-    return { text: 'Packing', bg: Colors.primaryLight, color: Colors.primary, border: Colors.primaryBorder };
+    return { text: label || 'Packing', bg: Colors.primaryLight, color: Colors.primary, border: Colors.primaryBorder };
   }
   if (['CONFIRMED', 'ACCEPTED'].includes(s)) {
-    return { text: 'Confirmed', bg: Colors.primaryLight, color: Colors.primary, border: Colors.primaryBorder };
+    return { text: label || 'Confirmed', bg: Colors.primaryLight, color: Colors.primary, border: Colors.primaryBorder };
   }
-  return { text: status || 'Placed', bg: '#F8FAFC', color: '#475569', border: '#E2E8F0' };
+  return { text: label || status || 'Placed', bg: '#F8FAFC', color: '#475569', border: '#E2E8F0' };
 };
 
 export const OrdersScreen = ({ navigation }: any) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { addToCart } = useCart();
-  const { lang } = useLanguage();
+  const { lang, t, tProd, tStatus, prefetchTranslations } = useLanguage();
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -148,6 +149,13 @@ export const OrdersScreen = ({ navigation }: any) => {
       const raw = res?.data?.data || res?.data?.orders || res?.data || res;
       if (Array.isArray(raw)) {
         setOrders(raw);
+        const itemNames: string[] = [];
+        raw.forEach((o: any) => {
+          o.items?.forEach((i: any) => {
+            if (i?.name) itemNames.push(i.name);
+          });
+        });
+        if (itemNames.length > 0) prefetchTranslations(itemNames);
       } else {
         setOrders([]);
       }
@@ -275,7 +283,7 @@ export const OrdersScreen = ({ navigation }: any) => {
 
   // Render Order Card (Clean Minimalist)
   const renderOrderItem = ({ item }: { item: Order }) => {
-    const badge = getStatusBadge(item.status);
+    const badge = getStatusBadge(item.status, tStatus);
     const active = isOrderActive(item.status);
     const cancellable = canOrderCancel(item.status);
     const isScheduled = item.deliveryType === 'SCHEDULED';
@@ -286,7 +294,7 @@ export const OrdersScreen = ({ navigation }: any) => {
 
     // Items preview
     const items = item.items || [];
-    const previewNames = items.slice(0, 3).map(x => x.name).join(', ');
+    const previewNames = items.slice(0, 3).map(x => tProd(x)).join(', ');
     const remainingCount = items.length > 3 ? items.length - 3 : 0;
 
     const totalAmount = item.total ?? item.grandTotal ?? item.totalAmount ?? 0;
@@ -379,7 +387,7 @@ export const OrdersScreen = ({ navigation }: any) => {
               isCancelled && styles.footerNoteCancelled,
             ]}
           >
-            {isDelivered ? 'Delivered' : isCancelled ? 'Cancelled' : active ? 'In Progress' : 'Placed'}
+            {badge.text}
           </Text>
 
           <View style={styles.btnActionsRow}>
@@ -394,7 +402,7 @@ export const OrdersScreen = ({ navigation }: any) => {
                   })
                 }
               >
-                <Text style={styles.chatBtnText}>Chat</Text>
+                <Text style={styles.chatBtnText}>{t('chat', 'Chat')}</Text>
               </TouchableOpacity>
             )}
 
@@ -404,7 +412,7 @@ export const OrdersScreen = ({ navigation }: any) => {
                 activeOpacity={0.7}
                 onPress={() => handleOpenEdit(item)}
               >
-                <Text style={styles.editBtnText}>Edit</Text>
+                <Text style={styles.editBtnText}>{t('edit', 'Edit')}</Text>
               </TouchableOpacity>
             )}
 
@@ -419,7 +427,7 @@ export const OrdersScreen = ({ navigation }: any) => {
                   setCancelModalVisible(true);
                 }}
               >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>{t('cancel', 'Cancel')}</Text>
               </TouchableOpacity>
             )}
 
@@ -428,7 +436,7 @@ export const OrdersScreen = ({ navigation }: any) => {
               activeOpacity={0.8}
               onPress={() => handleReorder(item)}
             >
-              <Text style={styles.reorderBtnText}>Re-order</Text>
+              <Text style={styles.reorderBtnText}>{t('reorder', 'Re-order')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -460,7 +468,7 @@ export const OrdersScreen = ({ navigation }: any) => {
                 <Feather name="chevron-left" size={24} color="#0F172A" />
               </TouchableOpacity>
             )}
-            <Text style={styles.heroTitle}>My Orders</Text>
+            <Text style={styles.heroTitle}>{t('myOrders', 'My Orders')}</Text>
             {totalCount > 0 && (
               <View style={styles.totalBadge}>
                 <Text style={styles.totalBadgeText}>{totalCount}</Text>
@@ -472,25 +480,25 @@ export const OrdersScreen = ({ navigation }: any) => {
         {/* Filter Tabs */}
         <View style={styles.tabsContainer}>
           {[
-            { id: 'All', label: 'All', count: totalCount },
-            { id: 'Active', label: 'Active', count: activeCount },
-            { id: 'Delivered', label: 'Delivered', count: deliveredCount },
-            { id: 'Cancelled', label: 'Cancelled', count: cancelledCount },
-          ].map(t => {
-            const isSelected = activeTab === t.id;
+            { id: 'All', label: t('all', 'All'), count: totalCount },
+            { id: 'Active', label: t('active', 'Active'), count: activeCount },
+            { id: 'Delivered', label: t('delivered', 'Delivered'), count: deliveredCount },
+            { id: 'Cancelled', label: t('cancelled', 'Cancelled'), count: cancelledCount },
+          ].map(tabItem => {
+            const isSelected = activeTab === tabItem.id;
             return (
               <TouchableOpacity
-                key={t.id}
+                key={tabItem.id}
                 style={[styles.tabButton, isSelected && styles.tabButtonActive]}
-                onPress={() => setActiveTab(t.id as any)}
+                onPress={() => setActiveTab(tabItem.id as any)}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.tabButtonText, isSelected && styles.tabButtonTextActive]}>
-                  {t.label}
+                  {tabItem.label}
                 </Text>
                 <View style={[styles.tabCountPill, isSelected && styles.tabCountPillActive]}>
                   <Text style={[styles.tabCountText, isSelected && styles.tabCountTextActive]}>
-                    {t.count}
+                    {tabItem.count}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -503,7 +511,7 @@ export const OrdersScreen = ({ navigation }: any) => {
           <Feather name="search" size={14} color="#64748B" style={{ marginRight: 8 }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by Order ID or grocery item..."
+            placeholder={t('searchOrdersPlaceholder', 'Search by Order ID or grocery item...')}
             placeholderTextColor="#94A3B8"
             value={search}
             onChangeText={setSearch}
@@ -533,33 +541,57 @@ export const OrdersScreen = ({ navigation }: any) => {
           data={filteredOrders}
           keyExtractor={item => item.id || item.orderNumber || String(Math.random())}
           renderItem={renderOrderItem}
-          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 90 }]}
+          contentContainerStyle={[
+            styles.listContent,
+            filteredOrders.length === 0 && styles.listContentEmpty,
+            { paddingBottom: insets.bottom + 90 },
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconOuter}>
+                <View style={styles.emptyIconCircle}>
+                  <Feather
+                    name={
+                      search
+                        ? 'search'
+                        : activeTab === 'Delivered'
+                        ? 'check-circle'
+                        : activeTab === 'Active'
+                        ? 'clock'
+                        : 'shopping-bag'
+                    }
+                    size={32}
+                    color={Colors.primary}
+                  />
+                </View>
+              </View>
               <Text style={styles.emptyTitle}>
                 {search
-                  ? 'No matching orders found'
+                  ? t('noMatchingOrders', 'No matching orders found')
                   : activeTab === 'Active'
-                  ? 'No active deliveries'
+                  ? t('noActiveDeliveries', 'No active deliveries')
                   : activeTab === 'Delivered'
-                  ? 'No completed orders yet'
-                  : 'No orders yet'}
+                  ? t('noCompletedOrders', 'No completed orders yet')
+                  : t('noOrdersYet', 'No orders yet')}
               </Text>
               <Text style={styles.emptySubtitle}>
                 {search
-                  ? `No orders matching "${search}" were found. Try another search.`
+                  ? `${t('noOrdersFoundFor', 'No orders matching')} "${search}". ${t('tryAnotherSearch', 'Try another search.')}`
                   : activeTab === 'Active'
-                  ? 'All your past orders have been completed.'
-                  : 'Orders matching this filter will appear here.'}
+                  ? t('allPastCompleted', 'All your past orders have been completed.')
+                  : activeTab === 'Delivered'
+                  ? t('deliveredWillShow', 'Your delivered orders will appear here.')
+                  : t('noOrdersYetSub', 'When you place orders, they will appear here with live tracking.')}
               </Text>
               <TouchableOpacity
                 style={styles.exploreBtn}
-                activeOpacity={0.8}
+                activeOpacity={0.88}
                 onPress={() => navigation.navigate('MainTabs')}
               >
-                <Text style={styles.exploreBtnText}>Shop Fresh Groceries</Text>
+                <Feather name="shopping-bag" size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.exploreBtnText}>{t('shopFreshGroceries', 'Shop Fresh Groceries')}</Text>
               </TouchableOpacity>
             </View>
           }
@@ -1039,37 +1071,77 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 24,
+    borderRadius: 20,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginTop: 10,
+    borderWidth: 1.5,
+    borderColor: '#DCFCE7',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+    marginHorizontal: 4,
+    marginVertical: 12,
+  },
+  emptyIconOuter: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#D1FAE5',
+  },
+  emptyIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#D1FAE5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#0F172A',
     marginBottom: 6,
     textAlign: 'center',
+    letterSpacing: -0.2,
   },
   emptySubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
+    lineHeight: 19,
+    marginBottom: 20,
+    paddingHorizontal: 8,
   },
   exploreBtn: {
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 12,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
   exploreBtnText: {
-    fontSize: 12.5,
-    fontWeight: '600',
+    fontSize: 13.5,
+    fontWeight: '700',
     color: '#FFFFFF',
+  },
+  listContentEmpty: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   modalOverlay: {
     flex: 1,

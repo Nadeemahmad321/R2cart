@@ -16,6 +16,7 @@ import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { Colors } from '../../theme/colors';
 import { useCart } from '../../context/CartContext';
 import { useFavorites } from '../../context/FavoritesContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { Product } from '../../types';
 import { FloatingCartBar } from '../../components/customer/FloatingCartBar';
 import { FavoriteCardSkeleton } from '../../components/common/Skeleton';
@@ -24,6 +25,7 @@ export const FavoritesScreen = ({ navigation }: any) => {
   const insets = useSafeAreaInsets();
   const { addToCart, removeFromCart, getItemQuantity, totalItems } = useCart();
   const { favorites, loading, fetchFavorites, removeFavorite } = useFavorites();
+  const { t, tProd } = useLanguage();
 
   // Refresh favorites on screen focus
   useFocusEffect(
@@ -70,7 +72,7 @@ export const FavoritesScreen = ({ navigation }: any) => {
         {/* Product Info Section */}
         <View style={styles.info}>
           <Text style={styles.name} numberOfLines={2}>
-            {item.name}
+            {tProd(item) || item.name}
           </Text>
           <Text style={styles.unit}>{unit}</Text>
 
@@ -167,23 +169,25 @@ export const FavoritesScreen = ({ navigation }: any) => {
         </View>
       ) : favorites.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <View style={styles.emptyIconOuter}>
-            <View style={styles.emptyIconCircle}>
-              <FontAwesome name="heart" size={38} color="#EF4444" />
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIconOuter}>
+              <View style={styles.emptyIconCircle}>
+                <FontAwesome name="heart" size={32} color="#EF4444" />
+              </View>
             </View>
+            <Text style={styles.emptyTitle}>{t('wishlistEmpty', 'Your Wishlist is Empty')}</Text>
+            <Text style={styles.emptySub}>
+              {t('wishlistEmptySub', 'Tap the heart icon on any product across R2Cart to save your favourite items here for fast re-ordering.')}
+            </Text>
+            <TouchableOpacity
+              style={styles.shopBtn}
+              onPress={() => navigation.navigate('Home')}
+              activeOpacity={0.88}
+            >
+              <Feather name="shopping-bag" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.shopBtnText}>{t('exploreProducts', 'Explore Products')}</Text>
+            </TouchableOpacity>
           </View>
-          <Text style={styles.emptyTitle}>Your Wishlist is Empty</Text>
-          <Text style={styles.emptySub}>
-            Tap the heart icon on any product across R2Cart to save your favourite items here for fast re-ordering.
-          </Text>
-          <TouchableOpacity
-            style={styles.shopBtn}
-            onPress={() => navigation.navigate('Home')}
-            activeOpacity={0.88}
-          >
-            <Feather name="shopping-bag" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
-            <Text style={styles.shopBtnText}>Explore Products</Text>
-          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -436,21 +440,41 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  emptyCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FEE2E2',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
   },
   emptyIconOuter: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     backgroundColor: '#FEF2F2',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#FECACA',
   },
   emptyIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
@@ -461,6 +485,7 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     marginBottom: 8,
     textAlign: 'center',
+    letterSpacing: -0.2,
   },
   emptySub: {
     fontSize: 13,
@@ -468,6 +493,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 19,
     marginBottom: 24,
+    paddingHorizontal: 8,
   },
   shopBtn: {
     flexDirection: 'row',

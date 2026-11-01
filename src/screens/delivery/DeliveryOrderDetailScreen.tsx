@@ -10,20 +10,40 @@ import {
   Linking,
   ActivityIndicator,
   StatusBar,
+  Modal,
+  Vibration,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
+import { useToast } from '../../context/ToastContext';
 import { api } from '../../services/api';
+import { DeliveryProofModal } from '../../components/delivery/DeliveryProofModal';
+import {
+  getDeliveryActions,
+  getDeliveryStatusMeta,
+  BACKEND_DELIVERY_FAILURE_REASONS,
+  DeliveryAction,
+  DeliveryFailureReason,
+} from '../../services/deliveryWorkflow';
 
 export const DeliveryOrderDetailScreen = ({ route, navigation }: any) => {
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
   const { orderId } = route.params;
 
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [updating, setUpdating] = useState<boolean>(false);
   const [otp, setOtp] = useState<string>('');
+
+  // Proof & Failure Modals State
+  const [proofModalVisible, setProofModalVisible] = useState<boolean>(false);
+  const [failureModalVisible, setFailureModalVisible] = useState<boolean>(false);
+  const [selectedFailureReason, setSelectedFailureReason] = useState<DeliveryFailureReason>(
+    BACKEND_DELIVERY_FAILURE_REASONS[0]
+  );
+  const [failureNotes, setFailureNotes] = useState<string>('');
 
   const fetchDetails = useCallback(async () => {
     try {
@@ -46,9 +66,10 @@ export const DeliveryOrderDetailScreen = ({ route, navigation }: any) => {
   const orderNum = order?.orderNumber || (targetOrderId ? String(targetOrderId).slice(-6).toUpperCase() : '');
   const isCod = order?.paymentMethod === 'COD';
   const totalAmount = order?.grandTotal ?? order?.totalAmount ?? order?.codAmountToCollect ?? 0;
-  const isDelivered = order?.status === 'DELIVERED';
-  const isOutForDelivery = order?.status === 'OUT_FOR_DELIVERY';
-  const isFailed = order?.status === 'DELIVERY_FAILED';
+
+  // Resolve dynamic status actions and metadata directly from backend state
+  const statusMeta = getDeliveryStatusMeta(order?.status);
+  const { primaryAction, secondaryAction, isTerminal } = getDeliveryActions(order);
 
   const addressStr =
     typeof order?.deliveryAddress === 'string'
@@ -64,75 +85,48 @@ export const DeliveryOrderDetailScreen = ({ route, navigation }: any) => {
           .join(', ') ||
         'Address not provided';
 
-  const handleStartDelivery = async () => {
-    setUpdating(true);
-    try {
-      await api.updateDeliveryStatus(targetOrderId, 'OUT_FOR_DELIVERY');
-      Alert.alert('Order Out for Delivery', 'Customer has been notified that you are on the way.');
-      fetchDetails();
-    } catch (err: any) {
-      Alert.alert('Action Failed', err.message || 'Could not update status');
-    } finally {
-      setUpdating(false);
+  const assignmentId = order?.assignmentId || order?.id || orderId;
+
+  // Perform dynamic progress status transition (ACCEPTED, PICKED_UP, OUT_FOR_DELIVERY)
+  const handlePerformAction = async (action: DeliveryAction) => {
+    if (action.actionKey === 'COMPLETE_DELIVERY') {
+      setProofModalVisible(true);
+      return;
+    }
+    if (action.actionKey === 'REPORT_FAILURE') {
+      setFailureModalVisible(true);
+      return;
+    }
+    if (action.nextStatus) {
+      setUpdating(true);
+      try {
+        await api.updateDeliveryStatus(assignmentId, action.nextStatus);
+        try {
+          Vibration.vibrate(200);
+        } catch {}
+        showToast(`Delivery status updated: ${action.label}`, 'success', 'top');
+        fetchDetails();
+      } catch (err: any) {
+        Alert.alert('Action Failed', err.message || 'Could not update status');
+      } finally {
+        setUpdating(false);
+      }
     }
   };
 
-  const handleCompleteDelivery = async () => {
+  const handleConfirmFailure = async () => {
+    setFailureModalVisible(false);
     setUpdating(true);
     try {
-      await api.completeDelivery(targetOrderId, otp.trim() || undefined, 'Delivered by rider');
-      Alert.alert('Delivery Successful', 'Order marked as delivered.', [
+      await api.reportDeliveryFailure(assignmentId, selectedFailureReason);
+      Alert.alert('Reported', 'Delivery failure has been recorded.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (err: any) {
-      Alert.alert('Delivery Failed', err.message || 'Could not complete delivery');
+      Alert.alert('Error', err.message || 'Could not record failure');
     } finally {
       setUpdating(false);
     }
-  };
-
-  const handleReportFailure = () => {
-    Alert.prompt
-      ? Alert.prompt(
-          'Report Delivery Issue',
-          'Please specify the reason (e.g. Customer unavailable, Wrong address):',
-          async (reason) => {
-            if (!reason?.trim()) return;
-            try {
-              setUpdating(true);
-              await api.reportDeliveryFailure(targetOrderId, reason.trim());
-              Alert.alert('Reported', 'Delivery failure has been recorded.', [
-                { text: 'OK', onPress: () => navigation.goBack() },
-              ]);
-            } catch (err: any) {
-              Alert.alert('Error', err.message);
-            } finally {
-              setUpdating(false);
-            }
-          }
-        )
-      : Alert.alert(
-          'Report Delivery Issue',
-          'Customer was unavailable or delivery could not be completed.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Confirm Failure',
-              style: 'destructive',
-              onPress: async () => {
-                try {
-                  setUpdating(true);
-                  await api.reportDeliveryFailure(targetOrderId, 'Customer unavailable at location');
-                  navigation.goBack();
-                } catch (err: any) {
-                  Alert.alert('Error', err.message);
-                } finally {
-                  setUpdating(false);
-                }
-              },
-            },
-          ]
-        );
   };
 
   const handleOpenMaps = () => {
@@ -175,9 +169,9 @@ export const DeliveryOrderDetailScreen = ({ route, navigation }: any) => {
           <Text style={styles.headerSubtitle}>Delivery Details</Text>
         </View>
 
-        <View style={[styles.statusBadge, isDelivered ? styles.badgeDelivered : isOutForDelivery ? styles.badgeOut : isFailed ? styles.badgeFailed : styles.badgeAssigned]}>
-          <Text style={[styles.statusBadgeText, isDelivered ? styles.statusTextDelivered : isOutForDelivery ? styles.statusTextOut : isFailed ? styles.statusTextFailed : styles.statusTextAssigned]}>
-            {order.status ? order.status.replace(/_/g, ' ') : 'ASSIGNED'}
+        <View style={[styles.statusBadge, { backgroundColor: statusMeta.badgeBg, borderColor: statusMeta.badgeBorder }]}>
+          <Text style={[styles.statusBadgeText, { color: statusMeta.badgeText }]}>
+            {statusMeta.label}
           </Text>
         </View>
       </View>
@@ -307,27 +301,11 @@ export const DeliveryOrderDetailScreen = ({ route, navigation }: any) => {
           })}
         </View>
 
-        {/* Delivery Workflow Actions */}
+        {/* Delivery Workflow Actions: Dynamically resolved from backend state */}
         <View style={styles.card}>
           <Text style={styles.cardHeader}>Delivery Status Actions</Text>
 
-          {!isOutForDelivery && !isDelivered && !isFailed ? (
-            <TouchableOpacity
-              style={[styles.primaryActionBtn, updating && styles.btnDisabled]}
-              disabled={updating}
-              onPress={handleStartDelivery}
-              activeOpacity={0.85}
-            >
-              {updating ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <Feather name="truck" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.primaryActionText}>Start Delivery (Out For Delivery)</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          ) : isOutForDelivery ? (
+          {order.status === 'OUT_FOR_DELIVERY' || order.status === 'DELIVERY_PROOF_PENDING' ? (
             <>
               <View style={styles.otpBox}>
                 <Text style={styles.otpLabel}>Delivery Verification Code (OTP)</Text>
@@ -342,43 +320,78 @@ export const DeliveryOrderDetailScreen = ({ route, navigation }: any) => {
                 />
               </View>
 
-              <TouchableOpacity
-                style={[styles.primaryActionBtn, updating && styles.btnDisabled]}
-                disabled={updating}
-                onPress={handleCompleteDelivery}
-                activeOpacity={0.85}
-              >
-                {updating ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <>
-                    <Feather name="check-circle" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.primaryActionText}>Mark Order Delivered</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+              {primaryAction && (
+                <TouchableOpacity
+                  style={[
+                    styles.primaryActionBtn,
+                    primaryAction.color ? { backgroundColor: primaryAction.color } : null,
+                    updating && styles.btnDisabled,
+                  ]}
+                  disabled={updating}
+                  onPress={() => handlePerformAction(primaryAction)}
+                  activeOpacity={0.85}
+                >
+                  {updating ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <>
+                      <Feather name={primaryAction.icon as any} size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+                      <Text style={styles.primaryActionText}>{primaryAction.label}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
 
-              <TouchableOpacity
-                style={styles.failureBtn}
-                disabled={updating}
-                onPress={handleReportFailure}
-                activeOpacity={0.8}
-              >
-                <Feather name="alert-triangle" size={14} color="#DC2626" style={{ marginRight: 6 }} />
-                <Text style={styles.failureBtnText}>Report Delivery Issue / Failed</Text>
-              </TouchableOpacity>
+              {secondaryAction && (
+                <TouchableOpacity
+                  style={styles.failureBtn}
+                  disabled={updating}
+                  onPress={() => handlePerformAction(secondaryAction)}
+                  activeOpacity={0.8}
+                >
+                  <Feather
+                    name={secondaryAction.icon as any}
+                    size={14}
+                    color={secondaryAction.color || '#DC2626'}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={styles.failureBtnText}>{secondaryAction.label}</Text>
+                </TouchableOpacity>
+              )}
             </>
-          ) : isDelivered ? (
+          ) : primaryAction && !isTerminal ? (
+            <TouchableOpacity
+              style={[
+                styles.primaryActionBtn,
+                primaryAction.color ? { backgroundColor: primaryAction.color } : null,
+                updating && styles.btnDisabled,
+              ]}
+              disabled={updating}
+              onPress={() => handlePerformAction(primaryAction)}
+              activeOpacity={0.85}
+            >
+              {updating ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Feather name={primaryAction.icon as any} size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.primaryActionText}>{primaryAction.label}</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : order.status === 'DELIVERED' ? (
             <View style={styles.deliveredSuccessBanner}>
               <Feather name="check-circle" size={18} color="#059669" style={{ marginRight: 8 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.deliveredSuccessTitle}>Order Delivered</Text>
                 <Text style={styles.deliveredSuccessSub}>
-                  {order.deliveredAt ? `Delivered on ${new Date(order.deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Completed successfully'}
+                  {order.deliveredAt
+                    ? `Delivered on ${new Date(order.deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                    : 'Completed successfully'}
                 </Text>
               </View>
             </View>
-          ) : (
+          ) : order.status === 'DELIVERY_FAILED' ? (
             <View style={styles.failedBanner}>
               <Feather name="x-circle" size={18} color="#DC2626" style={{ marginRight: 8 }} />
               <View style={{ flex: 1 }}>
@@ -386,9 +399,83 @@ export const DeliveryOrderDetailScreen = ({ route, navigation }: any) => {
                 <Text style={styles.failedSub}>{order.failureReason || 'Customer was unreachable'}</Text>
               </View>
             </View>
-          )}
+          ) : null}
         </View>
       </ScrollView>
+
+      {/* Official Backend Failure Reasons Selection Modal */}
+      <Modal
+        visible={failureModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFailureModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setFailureModalVisible(false)}
+        >
+          <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Report Delivery Issue</Text>
+            <Text style={styles.modalSub}>Select official reason recorded with backend:</Text>
+
+            <View style={styles.failureReasonsList}>
+              {BACKEND_DELIVERY_FAILURE_REASONS.map((reason) => {
+                const isSelected = selectedFailureReason === reason;
+                return (
+                  <TouchableOpacity
+                    key={reason}
+                    style={[styles.reasonOptionCard, isSelected && styles.reasonOptionCardSelected]}
+                    activeOpacity={0.75}
+                    onPress={() => setSelectedFailureReason(reason)}
+                  >
+                    <View style={[styles.reasonRadioCircle, isSelected && styles.reasonRadioCircleSelected]}>
+                      {isSelected ? <View style={styles.reasonRadioInner} /> : null}
+                    </View>
+                    <Text style={[styles.reasonOptionText, isSelected && styles.reasonOptionTextSelected]}>
+                      {reason}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.confirmFailureBtn, updating && styles.btnDisabled]}
+              disabled={updating}
+              onPress={handleConfirmFailure}
+              activeOpacity={0.85}
+            >
+              {updating ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.confirmFailureText}>Confirm & Report Failure</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setFailureModalVisible(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Mandatory Cloudinary Photo Proof & COD Delivery Modal */}
+      <DeliveryProofModal
+        visible={proofModalVisible}
+        order={order}
+        onClose={() => setProofModalVisible(false)}
+        onSuccess={() => {
+          showToast('🎉 Order Delivered Successfully!', 'success', 'top');
+          fetchDetails();
+          navigation.goBack();
+        }}
+      />
     </View>
   );
 };
@@ -759,5 +846,110 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 12,
     color: '#64748B',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#CBD5E1',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  modalSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    marginBottom: 14,
+  },
+  failureReasonsList: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  reasonOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  reasonOptionCardSelected: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+  },
+  reasonRadioCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  reasonRadioCircleSelected: {
+    borderColor: '#DC2626',
+  },
+  reasonRadioInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#DC2626',
+  },
+  reasonOptionText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  reasonOptionTextSelected: {
+    color: '#DC2626',
+    fontWeight: '700',
+  },
+  confirmFailureBtn: {
+    backgroundColor: '#DC2626',
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  confirmFailureText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modalCancelBtn: {
+    height: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
   },
 });

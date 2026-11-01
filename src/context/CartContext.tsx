@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CartItem, Product } from '../types';
 import { useToast } from './ToastContext';
 import { useAuth } from './AuthContext';
 import { api } from '../services/api';
+import { dataCache } from '../services/dataCache';
 
 interface CartContextType {
   items: CartItem[];
@@ -53,6 +55,14 @@ const mapBackendItemToCartItem = (bi: any, index: number = 0): CartItem => {
     mrp: Math.max(0, Number(bi.mrp) || Number(bi.price) || 0),
     imageUrl: typeof img === 'string' ? img.trim() : (img?.url || ''),
     quantity: Math.max(1, Number(bi.qty || bi.quantity) || 1),
+    stock: bi.stock !== undefined ? Number(bi.stock) : undefined,
+    status: bi.status,
+    isSoon: Boolean(bi.isSoon),
+    comingSoon: Boolean(bi.comingSoon),
+    categorySlug: bi.categorySlug || (typeof bi.category === 'string' ? bi.category : bi.category?.slug),
+    deliveryScope: bi.deliveryScope || bi.product?.deliveryScope || 'LOCAL',
+    orderMode: bi.orderMode || bi.product?.orderMode || 'DIRECT_ORDER',
+    shippingFee: bi.shippingFee ? Number(bi.shippingFee) : (bi.product?.shippingFee ? Number(bi.product.shippingFee) : undefined),
   };
 };
 
@@ -89,6 +99,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 mrp: Math.max(0, Number(i.mrp) || Number(i.price) || 0),
                 imageUrl: typeof i.imageUrl === 'string' ? i.imageUrl.trim() : '',
                 quantity: Math.max(1, Number(i.quantity) || 1),
+                stock: i.stock !== undefined ? Number(i.stock) : undefined,
+                status: i.status,
+                isSoon: Boolean(i.isSoon),
+                comingSoon: Boolean(i.comingSoon),
+                categorySlug: i.categorySlug,
               }));
             setItems(sanitized);
             itemsRef.current = sanitized;
@@ -135,17 +150,51 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Sync when user logs in
+  // Sync when user logs in and maintain multi-device real-time sync
   useEffect(() => {
     if (user?.id) {
       syncCartWithBackend();
+
+      // 1. Sync immediately whenever app comes to foreground (AppState = 'active')
+      const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+        if (nextAppState === 'active') {
+          syncCartWithBackend();
+        }
+      });
+
+      // 2. Poll backend cart every 8 seconds while active for seamless multi-device parity
+      const interval = setInterval(() => {
+        if (AppState.currentState === 'active' && userRef.current) {
+          syncCartWithBackend();
+        }
+      }, 8000);
+
+      return () => {
+        subscription.remove();
+        clearInterval(interval);
+      };
     }
   }, [user?.id, syncCartWithBackend]);
 
   const addToCart = useCallback(
     async (product: Product, variantId?: string) => {
+      const v = variantId ? product.variants?.find(x => x.id === variantId) : undefined;
+
+      // Defense in depth: Check out-of-stock and coming-soon status
+      if (dataCache.isProductComingSoon(product)) {
+        notify('This product is coming soon and cannot be ordered yet', 'error');
+        return;
+      }
+      if (dataCache.isProductOutOfStock(product, v ? v.stock : undefined)) {
+        notify('This product is out of stock', 'error');
+        return;
+      }
+      if (product.orderMode === 'CONTACT_REQUEST') {
+        notify('This item is available via enquiry only. Please tap Enquire.', 'info');
+        return;
+      }
+
       const currentItems = itemsRef.current;
-      const v = variantId && product.variants?.find(x => x.id === variantId);
       const price = v ? v.price : (product.price || 0);
       const mrp = v ? v.mrp : (product.mrp || price);
       const unit = v ? (v.unit || v.weight || '') : (product.unit || '');
@@ -176,6 +225,14 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           mrp,
           imageUrl: typeof img === 'string' ? img : ((img as any)?.url || ''),
           quantity: 1,
+          stock: v?.stock !== undefined ? v.stock : product.stock,
+          status: product.status,
+          isSoon: (product as any).isSoon,
+          comingSoon: (product as any).comingSoon,
+          categorySlug: product.categorySlug || (typeof product.category === 'string' ? product.category : product.category?.slug),
+          deliveryScope: product.deliveryScope || 'LOCAL',
+          orderMode: product.orderMode || 'DIRECT_ORDER',
+          shippingFee: product.shippingFee ? Number(product.shippingFee) : undefined,
         };
         newQty = 1;
         nextItems = [...currentItems, newItem];
@@ -313,13 +370,37 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [notify]);
 
   const getItemQuantity = useCallback((productId: string, variantId?: string): number => {
+    const cleanProdId = String(productId || '').replace(/_default$/, '').trim();
+    if (!cleanProdId) return 0;
+
+    // 1. Exact match
     const isMatch = (item: CartItem) => {
-      const prodMatch = item.productId === productId || item.id === productId || item.id === `${productId}_default`;
+      const itemCleanId = String(item.productId || item.id || '').replace(/_default$/, '').trim();
+      const prodMatch =
+        item.productId === cleanProdId ||
+        item.id === cleanProdId ||
+        item.id === `${cleanProdId}_default` ||
+        itemCleanId === cleanProdId;
       const varMatch = variantId ? item.variantId === variantId : (!item.variantId || item.variantId === 'default');
       return prodMatch && varMatch;
     };
-    const found = itemsRef.current.find(isMatch) || itemsRef.current.find(i => i.productId === productId || i.id === productId);
-    return found ? found.quantity : 0;
+    const found = itemsRef.current.find(isMatch) || itemsRef.current.find(i => i.productId === cleanProdId || i.id === cleanProdId);
+    if (found) return found.quantity;
+
+    // 2. Sibling variant match (if general card check without variantId)
+    if (!variantId) {
+      const cached = dataCache.getProductById(cleanProdId);
+      if (cached?.variantGroupId) {
+        const siblingItems = itemsRef.current.filter(i => {
+          const itemProd = dataCache.getProductById(String(i.productId || i.id || '').replace(/_default$/, '').trim());
+          return itemProd?.variantGroupId === cached.variantGroupId;
+        });
+        if (siblingItems.length > 0) {
+          return siblingItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+        }
+      }
+    }
+    return 0;
   }, []);
 
   // Dynamic delivery settings fetched from backend

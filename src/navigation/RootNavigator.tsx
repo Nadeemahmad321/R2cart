@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Colors } from '../theme/colors';
@@ -26,7 +27,6 @@ import { SplashScreen } from '../screens/SplashScreen';
 import { useAuth } from '../context/AuthContext';
 
 // Delivery Boy Screens
-import { DeliveryLoginScreen } from '../screens/delivery/DeliveryLoginScreen';
 import { DeliveryDashboardScreen } from '../screens/delivery/DeliveryDashboardScreen';
 import { DeliveryOrderDetailScreen } from '../screens/delivery/DeliveryOrderDetailScreen';
 import { DeliveryChatScreen } from '../screens/delivery/DeliveryChatScreen';
@@ -50,6 +50,9 @@ export const RootNavigator = () => {
 
     // Production-Grade Foreground In-App Notification Banner
     const unsubForeground = notificationService.listenForeground((remoteMessage) => {
+      // Notify rider screen immediately if open
+      DeviceEventEmitter.emit('RIDER_REFRESH_ORDERS', remoteMessage);
+
       const title =
         remoteMessage.notification?.title ||
         (remoteMessage.data?.title as string) ||
@@ -60,12 +63,23 @@ export const RootNavigator = () => {
         '';
       const data = remoteMessage.data;
 
+      const targetScreen = (data?.screen as string | undefined) || '';
+      const isRider =
+        fcmRole === 'DELIVERY' ||
+        data?.role === 'DELIVERY' ||
+        targetScreen === 'DeliveryOrderDetail' ||
+        (title && (
+          title.toLowerCase().includes('assign') ||
+          title.toLowerCase().includes('rider') ||
+          title.toLowerCase().includes('delivery')
+        ));
+
       showNotification({
         title,
         body,
         data,
+        type: isRider ? 'rider' : 'customer',
         onPress: () => {
-          const targetScreen = data?.screen as string | undefined;
           const orderId = data?.orderId as string | undefined;
 
           if (targetScreen === 'OrderDetail' && orderId) {
@@ -73,7 +87,11 @@ export const RootNavigator = () => {
           } else if (targetScreen === 'DeliveryOrderDetail' && orderId) {
             navigate('DeliveryOrderDetail', { orderId });
           } else if (orderId) {
-            navigate('OrderDetail', { orderId });
+            if (isRider) {
+              navigate('DeliveryOrderDetail', { orderId });
+            } else {
+              navigate('OrderDetail', { orderId });
+            }
           } else if (targetScreen) {
             navigate(targetScreen, data);
           }
@@ -83,6 +101,7 @@ export const RootNavigator = () => {
 
     // Tap-to-open handler (from background or quit state)
     const unsubOpened = notificationService.listenNotificationOpened((remoteMessage) => {
+      DeviceEventEmitter.emit('RIDER_REFRESH_ORDERS', remoteMessage);
       const data = remoteMessage.data;
       if (!data) return;
 
@@ -201,15 +220,6 @@ export const RootNavigator = () => {
         />
 
         {/* Delivery Boy Portal */}
-        <Stack.Screen
-          name="DeliveryLogin"
-          component={DeliveryLoginScreen}
-          options={{
-            title: 'Rider Portal',
-            headerStyle: { backgroundColor: '#0F172A' },
-            headerTintColor: '#FFFFFF',
-          }}
-        />
         <Stack.Screen
           name="DeliveryDashboard"
           component={DeliveryDashboardScreen}

@@ -7,6 +7,7 @@ import {
   Dimensions,
   TouchableOpacity,
   AppState,
+  Vibration,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
@@ -20,6 +21,7 @@ export interface NotificationPayload {
   title: string;
   body: string;
   data?: any;
+  type?: 'customer' | 'rider' | 'order' | 'delivery' | 'chat';
   onPress?: () => void;
 }
 
@@ -66,6 +68,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const showToast = useCallback(
     (msg: string, toastType: ToastType = 'success', toastPosition: 'top' | 'bottom' = 'top') => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+
+      try {
+        Vibration.vibrate(35);
+      } catch {}
 
       setMessage(msg);
       setType(toastType);
@@ -129,10 +135,36 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [notifOpacity, notifTranslateY]);
 
   const showNotification = useCallback(
-    ({ title, body, data, onPress }: NotificationPayload) => {
+    ({ title, body, data, type: notifType, onPress }: NotificationPayload) => {
       if (notifTimerRef.current) clearTimeout(notifTimerRef.current);
 
-      setNotifData({ title, body, data, onPress });
+      const isRider =
+        notifType === 'rider' ||
+        data?.role === 'DELIVERY' ||
+        data?.targetRole === 'DELIVERY' ||
+        data?.screen === 'DeliveryOrderDetail' ||
+        (title && (
+          title.toLowerCase().includes('assign') ||
+          title.toLowerCase().includes('rider') ||
+          title.toLowerCase().includes('naya order') ||
+          title.toLowerCase().includes('new order')
+        ));
+
+      try {
+        if (isRider) {
+          Vibration.vibrate([0, 300, 150, 300]);
+        } else {
+          Vibration.vibrate(60);
+        }
+      } catch {}
+
+      setNotifData({
+        title,
+        body,
+        data,
+        type: isRider ? 'rider' : notifType || 'customer',
+        onPress,
+      });
       setNotifVisible(true);
 
       notifTranslateY.setValue(-120);
@@ -154,7 +186,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       notifTimerRef.current = setTimeout(() => {
         dismissNotification();
-      }, 5500);
+      }, isRider ? 7500 : 5500);
     },
     [notifOpacity, notifTranslateY, dismissNotification]
   );
@@ -241,6 +273,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         <Animated.View
           style={[
             styles.notifBannerCard,
+            notifData.type === 'rider' && styles.notifBannerCardRider,
             {
               top: Math.max(insets.top, 12) + 6,
               opacity: notifOpacity,
@@ -248,29 +281,70 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             },
           ]}
         >
-          <TouchableOpacity
-            style={styles.notifBannerInner}
-            activeOpacity={0.92}
-            onPress={() => {
-              const handler = notifData.onPress;
-              dismissNotification();
-              if (handler) handler();
-            }}
-          >
-            {/* Left Emerald Brand Indicator */}
-            <View style={styles.notifAccentBar} />
-
-            <View style={styles.notifContentWrap}>
-              {/* Top Branding Row */}
-              <View style={styles.notifHeaderRow}>
-                <View style={styles.notifBrandBadge}>
-                  <View style={styles.notifBellCircle}>
-                    <Feather name="bell" size={11} color="#059669" />
-                  </View>
-                  <Text style={styles.notifBrandText}>R2Cart</Text>
-                  <Text style={styles.notifTimeText}>• Now</Text>
+          {notifData.type === 'rider' ? (
+            /* --- RIDER HIGH-IMPACT DISPATCH ALERT CARD --- */
+            <TouchableOpacity
+              style={styles.riderBannerInner}
+              activeOpacity={0.94}
+              onPress={() => {
+                const handler = notifData.onPress;
+                dismissNotification();
+                if (handler) handler();
+              }}
+            >
+              <View style={styles.riderTopRow}>
+                <View style={styles.riderBeaconWrap}>
+                  <View style={styles.riderPulseDot} />
+                  <Feather name="zap" size={12} color="#F59E0B" style={{ marginRight: 4 }} />
+                  <Text style={styles.riderBeaconText}>RIDER ORDER ALERT</Text>
                 </View>
+                <TouchableOpacity
+                  onPress={dismissNotification}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={styles.notifCloseBtn}
+                >
+                  <Feather name="x" size={16} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
 
+              <View style={styles.riderContentRow}>
+                <View style={styles.riderIconBadge}>
+                  <Feather name="navigation" size={20} color="#10B981" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.riderNotifTitle} numberOfLines={1}>
+                    {notifData.title}
+                  </Text>
+                  {notifData.body ? (
+                    <Text style={styles.riderNotifBody} numberOfLines={2}>
+                      {notifData.body}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+
+              <View style={styles.riderCtaBtn}>
+                <Text style={styles.riderCtaText}>View & Deliver Order</Text>
+                <Feather name="arrow-right" size={14} color="#FFFFFF" style={{ marginLeft: 6 }} />
+              </View>
+            </TouchableOpacity>
+          ) : (
+            /* --- USER / CUSTOMER ENHANCED IN-APP NOTIFICATION CARD --- */
+            <TouchableOpacity
+              style={styles.userBannerInner}
+              activeOpacity={0.92}
+              onPress={() => {
+                const handler = notifData.onPress;
+                dismissNotification();
+                if (handler) handler();
+              }}
+            >
+              <View style={styles.userNotifTopRow}>
+                <View style={styles.userBrandPill}>
+                  <View style={styles.userBrandDot} />
+                  <Text style={styles.userBrandName}>R2Cart</Text>
+                  <Text style={styles.userLiveTag}>• Just now</Text>
+                </View>
                 <TouchableOpacity
                   onPress={dismissNotification}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -280,17 +354,41 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 </TouchableOpacity>
               </View>
 
-              {/* Title & Body */}
-              <Text style={styles.notifTitle} numberOfLines={1}>
-                {notifData.title}
-              </Text>
-              {notifData.body ? (
-                <Text style={styles.notifBody} numberOfLines={2}>
-                  {notifData.body}
-                </Text>
-              ) : null}
-            </View>
-          </TouchableOpacity>
+              <View style={styles.userNotifContentRow}>
+                <View style={styles.userIconCircle}>
+                  <Feather
+                    name={
+                      (notifData.title + ' ' + (notifData.body || '')).toLowerCase().includes('deliver')
+                        ? 'truck'
+                        : (notifData.title + ' ' + (notifData.body || '')).toLowerCase().includes('confirm') ||
+                          (notifData.title + ' ' + (notifData.body || '')).toLowerCase().includes('placed')
+                        ? 'check-circle'
+                        : (notifData.title + ' ' + (notifData.body || '')).toLowerCase().includes('chat')
+                        ? 'message-circle'
+                        : 'bell'
+                    }
+                    size={18}
+                    color="#059669"
+                  />
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.userNotifTitle} numberOfLines={1}>
+                    {notifData.title}
+                  </Text>
+                  {notifData.body ? (
+                    <Text style={styles.userNotifBody} numberOfLines={2}>
+                      {notifData.body}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+
+              <View style={styles.userActionRow}>
+                <Text style={styles.userActionLink}>Tap to view details</Text>
+                <Feather name="chevron-right" size={13} color="#059669" />
+              </View>
+            </TouchableOpacity>
+          )}
         </Animated.View>
       )}
 
@@ -454,144 +552,258 @@ const styles = StyleSheet.create({
   toastContainer: {
     position: 'absolute',
     alignSelf: 'center',
-    maxWidth: width - 36,
-    minWidth: Math.min(width - 64, 320),
+    maxWidth: width - 32,
+    minWidth: Math.min(width - 64, 300),
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderRadius: 14,
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
     elevation: 10,
     zIndex: 99999,
   },
   toastSuccess: {
     backgroundColor: '#064E3B',
-    borderWidth: 1,
-    borderColor: '#059669',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
   },
   toastError: {
     backgroundColor: '#7F1D1D',
-    borderWidth: 1,
-    borderColor: '#DC2626',
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
   },
   toastInfo: {
     backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
+    borderWidth: 1.5,
+    borderColor: '#38BDF8',
   },
   iconCircleSuccess: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#10B981',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 9,
+    marginRight: 10,
   },
   iconCircleError: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#EF4444',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 9,
+    marginRight: 10,
   },
   iconCircleInfo: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#3B82F6',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#38BDF8',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 9,
+    marginRight: 10,
   },
   toastText: {
     color: '#FFFFFF',
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '700',
     flexShrink: 1,
-    lineHeight: 17,
+    lineHeight: 18,
   },
 
-  // --- Production In-App Notification Banner ---
+  // --- Enhanced In-App Push Notification Cards ---
   notifBannerCard: {
     position: 'absolute',
     alignSelf: 'center',
     width: width - 24,
+    maxWidth: 420,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    shadowColor: '#000000',
+    borderRadius: 20,
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 14,
     zIndex: 999999,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderColor: '#DCFCE7',
     overflow: 'hidden',
   },
-  notifBannerInner: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    minHeight: 74,
+  notifBannerCardRider: {
+    backgroundColor: '#0F172A',
+    borderColor: '#10B981',
+    shadowColor: '#10B981',
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 18,
   },
-  notifAccentBar: {
-    width: 5,
-    backgroundColor: '#059669',
+
+  // Customer In-App Notification
+  userBannerInner: {
+    padding: 14,
   },
-  notifContentWrap: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  notifHeaderRow: {
+  userNotifTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  notifBrandBadge: {
+  userBrandPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
   },
-  notifBellCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#ECFDF5',
-    alignItems: 'center',
-    justifyContent: 'center',
+  userBrandDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
     marginRight: 6,
   },
-  notifBrandText: {
+  userBrandName: {
     fontSize: 11,
     fontWeight: '800',
     color: '#059669',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
-  notifTimeText: {
+  userLiveTag: {
     fontSize: 10.5,
-    color: '#94A3B8',
-    marginLeft: 4,
+    color: '#64748B',
+    marginLeft: 3,
     fontWeight: '600',
   },
-  notifCloseBtn: {
-    padding: 2,
+  userNotifContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  notifTitle: {
-    fontSize: 13.5,
+  userIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userNotifTitle: {
+    fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
     marginBottom: 2,
+    letterSpacing: -0.2,
   },
-  notifBody: {
-    fontSize: 12,
+  userNotifBody: {
+    fontSize: 12.5,
     color: '#475569',
-    lineHeight: 16,
+    lineHeight: 17,
+  },
+  userActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  userActionLink: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#059669',
+    marginRight: 3,
+  },
+
+  // Rider High-Impact Notification
+  riderBannerInner: {
+    padding: 14,
+  },
+  riderTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  riderBeaconWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  riderPulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginRight: 6,
+  },
+  riderBeaconText: {
+    fontSize: 10.5,
+    fontWeight: '900',
+    color: '#F59E0B',
+    letterSpacing: 0.8,
+  },
+  riderContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  riderIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(16, 185, 129, 0.18)',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  riderNotifTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 2,
+    letterSpacing: -0.2,
+  },
+  riderNotifBody: {
+    fontSize: 12.5,
+    color: '#94A3B8',
+    lineHeight: 17,
+  },
+  riderCtaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    paddingVertical: 10,
+    borderRadius: 10,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  riderCtaText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  notifCloseBtn: {
+    padding: 3,
   },
 });

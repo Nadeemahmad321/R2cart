@@ -20,6 +20,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useToast } from '../../context/ToastContext';
+import { PasswordEyeButton } from '../../components/common/PasswordEyeButton';
 
 export const CustomerLoginScreen = ({ navigation }: any) => {
   const insets = useSafeAreaInsets();
@@ -214,8 +215,8 @@ export const CustomerLoginScreen = ({ navigation }: any) => {
               style={styles.textInput}
               placeholder={
                 lang === 'hi'
-                  ? 'ईमेल या मोबाइल नंबर'
-                  : 'Email or mobile number'
+                  ? 'मोबाइल नंबर, ईमेल या Staff ID'
+                  : 'Mobile number, email or Staff ID'
               }
               placeholderTextColor="#94A3B8"
               autoCapitalize="none"
@@ -250,16 +251,10 @@ export const CustomerLoginScreen = ({ navigation }: any) => {
                 if (errorMsg) setErrorMsg('');
               }}
             />
-            <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Feather
-                name={showPassword ? 'eye' : 'eye-off'}
-                size={18}
-                color={showPassword ? '#059669' : '#64748B'}
-              />
-            </TouchableOpacity>
+            <PasswordEyeButton
+              visible={showPassword}
+              onToggle={() => setShowPassword(!showPassword)}
+            />
           </View>
 
           {/* Solid Pill CTA Button */}
@@ -320,21 +315,21 @@ export const CustomerLoginScreen = ({ navigation }: any) => {
           {/* Legal Consent for Google Play compliance */}
           <View style={styles.legalConsentWrap}>
             <Text style={styles.legalConsentText}>
-              {lang === 'hi' ? 'लॉग इन करके, आप हमारी ' : 'By continuing, you agree to R2Cart\'s '}
+              {lang === 'hi' ? 'जारी रखकर, आप हमारी ' : 'By continuing, you agree to our '}
               <Text
                 style={styles.legalLink}
                 onPress={() => Linking.openURL('https://www.r2cart.in/terms').catch(() => {})}
               >
                 {lang === 'hi' ? 'सेवा की शर्तें' : 'Terms of Service'}
               </Text>
-              {lang === 'hi' ? ' और ' : ' & '}
+              {lang === 'hi' ? ' एवं ' : ' & '}
               <Text
                 style={styles.legalLink}
                 onPress={() => Linking.openURL('https://www.r2cart.in/privacy').catch(() => {})}
               >
                 {lang === 'hi' ? 'गोपनीयता नीति' : 'Privacy Policy'}
               </Text>
-              {lang === 'hi' ? ' से सहमत होते हैं।' : '.'}
+              {lang === 'hi' ? ' से सहमत हैं' : ''}
             </Text>
           </View>
         </View>
@@ -477,15 +472,19 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   legalConsentWrap: {
-    marginTop: 22,
-    paddingHorizontal: 8,
+    marginTop: 20,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    width: '100%',
   },
   legalConsentText: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: '#94A3B8',
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 18,
+    maxWidth: 320,
+    alignSelf: 'center',
   },
   legalLink: {
     color: '#059669',

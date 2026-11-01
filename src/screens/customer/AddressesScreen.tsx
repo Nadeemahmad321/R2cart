@@ -22,6 +22,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { Address } from '../../types';
 import { AddressCardSkeleton } from '../../components/common/Skeleton';
 
@@ -29,6 +30,7 @@ export const AddressesScreen = ({ navigation, route }: any) => {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const isSelectMode = route?.params?.selectMode || false;
 
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
@@ -72,7 +74,6 @@ export const AddressesScreen = ({ navigation, route }: any) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [street, setStreet] = useState('');
   const [landmark, setLandmark] = useState('');
-  const [house, setHouse] = useState('');
   const [type, setType] = useState<'Home' | 'Work' | 'Other'>('Home');
   const [customType, setCustomType] = useState('');
   const [isDefault, setIsDefault] = useState(false);
@@ -140,7 +141,6 @@ export const AddressesScreen = ({ navigation, route }: any) => {
     setDropdownOpen(false);
     setStreet('');
     setLandmark('');
-    setHouse('');
     setType('Home');
     setCustomType('');
     setIsDefault(addresses.length === 0);
@@ -161,7 +161,6 @@ export const AddressesScreen = ({ navigation, route }: any) => {
     setDropdownOpen(false);
     setStreet(item.street || '');
     setLandmark(item.landmark || '');
-    setHouse(item.house || item.houseNo || '');
 
     const t = (item.type || 'Home').trim();
     if (['Home', 'Work'].includes(t)) {
@@ -182,7 +181,6 @@ export const AddressesScreen = ({ navigation, route }: any) => {
     const cleanArea = area.trim();
     const cleanStreet = street.trim();
     const cleanLandmark = landmark.trim();
-    const cleanHouse = house.trim();
     const cleanType = type === 'Other' ? (customType.trim() || 'Other') : type;
 
     if (cleanName.length < 2) {
@@ -207,7 +205,7 @@ export const AddressesScreen = ({ navigation, route }: any) => {
     const payload = {
       name: cleanName,
       mobile: cleanMobile,
-      house: cleanHouse || '',
+      house: '',
       street: cleanStreet || '',
       landmark: cleanLandmark,
       area: cleanArea,
@@ -474,21 +472,25 @@ export const AddressesScreen = ({ navigation, route }: any) => {
         </View>
       ) : addresses.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <View style={styles.emptyIconCircle}>
-            <Feather name="map-pin" size={42} color="#059669" />
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIconOuter}>
+              <View style={styles.emptyIconCircle}>
+                <Feather name="map-pin" size={32} color={Colors.primary} />
+              </View>
+            </View>
+            <Text style={styles.emptyTitle}>{t('noSavedAddresses', 'No Saved Addresses')}</Text>
+            <Text style={styles.emptySub}>
+              {t('noSavedAddressesSub', 'Add your home, office or shop address for fast 15-minute grocery delivery.')}
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyAddBtn}
+              onPress={openAddModal}
+              activeOpacity={0.88}
+            >
+              <Feather name="plus" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.emptyAddBtnText}>{t('addNewAddress', 'Add New Delivery Address')}</Text>
+            </TouchableOpacity>
           </View>
-          <Text style={styles.emptyTitle}>No Saved Addresses</Text>
-          <Text style={styles.emptySub}>
-            Add your home, office or shop address for fast 15-minute grocery delivery.
-          </Text>
-          <TouchableOpacity
-            style={styles.emptyAddBtn}
-            onPress={openAddModal}
-            activeOpacity={0.85}
-          >
-            <Feather name="plus" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.emptyAddBtnText}>Add New Delivery Address</Text>
-          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -752,21 +754,6 @@ export const AddressesScreen = ({ navigation, route }: any) => {
                     placeholderTextColor="#94A3B8"
                     value={street}
                     onChangeText={setStreet}
-                  />
-                </View>
-              </View>
-
-              {/* House / Flat / Shop details (Optional) */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>House / Flat / Shop (Optional)</Text>
-                <View style={styles.inputWrap}>
-                  <Feather name="home" size={15} color="#94A3B8" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="e.g. House #14, Shop No. 2"
-                    placeholderTextColor="#94A3B8"
-                    value={house}
-                    onChangeText={setHouse}
                   />
                 </View>
               </View>
@@ -1109,46 +1096,78 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  emptyCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#DCFCE7',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
   },
   skeletonContainer: {
     paddingHorizontal: 16,
     paddingTop: 14,
   },
-  emptyIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  emptyIconOuter: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     backgroundColor: '#ECFDF5',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#D1FAE5',
+  },
+  emptyIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#D1FAE5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 6,
+    marginBottom: 8,
+    textAlign: 'center',
+    letterSpacing: -0.2,
   },
   emptySub: {
     fontSize: 13,
     color: '#64748B',
     textAlign: 'center',
     lineHeight: 19,
-    marginBottom: 20,
+    marginBottom: 22,
+    paddingHorizontal: 8,
   },
   emptyAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#059669',
-    paddingHorizontal: 20,
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 22,
     paddingVertical: 12,
-    borderRadius: 10,
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 2 },
+    borderRadius: 12,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   emptyAddBtnText: {
     fontSize: 13.5,

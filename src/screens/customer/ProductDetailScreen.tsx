@@ -19,11 +19,13 @@ import { Colors } from '../../theme/colors';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { api } from '../../services/api';
 import { Product, ProductVariant } from '../../types';
 import { Skeleton } from '../../components/common/Skeleton';
-import { ProductCard } from '../../components/customer';
+import { ProductCard, ProductEnquiryModal } from '../../components/customer';
 import { useFavorites } from '../../context/FavoritesContext';
+import { dataCache } from '../../services/dataCache';
 
 const { width } = Dimensions.get('window');
 
@@ -115,6 +117,7 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
   const { addToCart, removeFromCart, getItemQuantity } = useCart();
   const { user } = useAuth();
   const { notify } = useToast();
+  const { lang, t, tProd, tCat, tText, prefetchTranslations } = useLanguage();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
@@ -125,6 +128,7 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [myRating, setMyRating] = useState<number>(5);
   const [submittingRating, setSubmittingRating] = useState<boolean>(false);
+  const [enquiryModalOpen, setEnquiryModalOpen] = useState<boolean>(false);
 
   // Dynamic delivery config from backend
   const [deliveryEta, setDeliveryEta] = useState<string>('15-20 mins');
@@ -143,6 +147,9 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
       if (prodRes.status === 'fulfilled' && prodRes.value?.data) {
         const prodData: Product = prodRes.value.data;
         setProduct(prodData);
+        if (prodData) {
+          prefetchTranslations([prodData.name, prodData.categoryName, prodData.description].filter(Boolean));
+        }
 
         // Set user's existing rating if available
         if (prodData.rating != null && Number(prodData.rating) > 0) {
@@ -158,6 +165,7 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
                 const list = res.data;
                 // Similar products excluding current product
                 setRelatedProducts(list.filter(p => p.id !== prodData.id).slice(0, 8));
+                prefetchTranslations(list.map((p: any) => p.name));
 
                 // If backend product didn't have explicit variants array,
                 // check if other products share the same variantGroupId
@@ -191,7 +199,8 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
 
       if (deliveryRes.status === 'fulfilled' && deliveryRes.value?.data) {
         const dPayload = deliveryRes.value.data;
-        const eta = dPayload.settings?.estimatedDelivery || dPayload.estimatedDelivery || '15-20 mins';
+        dataCache.setDeliveryData(dPayload);
+        const eta = dPayload.settings?.estimatedDelivery || dPayload.estimatedDelivery || dataCache.getEstimatedDelivery('20-30 mins');
         setDeliveryEta(eta);
       }
     } catch (err: any) {
@@ -273,9 +282,10 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
 
   const activeImage = gallery[activeImgIndex] || gallery[0] || null;
 
-  // Real stock from backend
+  // Real stock from backend & Coming Soon status
+  const isComingSoon = dataCache.isProductComingSoon(product);
   const stock = selectedVariant?.stock !== undefined ? selectedVariant.stock : (product?.stock ?? 10);
-  const isOutOfStock = stock <= 0 || product?.status === 'INACTIVE';
+  const isOutOfStock = !isComingSoon && (stock <= 0 || product?.status === 'INACTIVE');
 
   const isVeg = details.dietaryPreference
     ? details.dietaryPreference.toLowerCase().includes('veg') && !details.dietaryPreference.toLowerCase().includes('non')
@@ -378,10 +388,20 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
         {/* Product Details Header Card */}
         <View style={styles.detailSection}>
           <View style={styles.badgeTopRow}>
-            <View style={styles.etaPill}>
-              <Feather name="zap" size={12} color={Colors.primaryDark} style={{ marginRight: 4 }} />
-              <Text style={styles.etaText}>Delivery in {deliveryEta}</Text>
-            </View>
+            {product.orderMode !== 'CONTACT_REQUEST' && product.deliveryScope !== 'PAN_INDIA' && (
+              <View style={styles.etaPill}>
+                <Feather name="zap" size={12} color={Colors.primaryDark} style={{ marginRight: 4 }} />
+                <Text style={styles.etaText}>{t('deliveryIn', 'Delivery in')} {deliveryEta}</Text>
+              </View>
+            )}
+            {product.deliveryScope === 'PAN_INDIA' && (
+              <View style={[styles.etaPill, styles.panIndiaPill]}>
+                <Feather name="truck" size={12} color="#6D28D9" style={{ marginRight: 4 }} />
+                <Text style={[styles.etaText, { color: '#6D28D9' }]}>
+                  {lang === 'hi' ? 'अखिल भारतीय डिलीवरी (5-10 दिन)' : 'Pan-India Delivery (5-10 Days)'}
+                </Text>
+              </View>
+            )}
 
             {product.rating != null && Number(product.rating) > 0 ? (
               <View style={styles.ratingBadge}>
@@ -402,13 +422,13 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
               ) : null}
               {product.categoryName ? (
                 <Text style={styles.categoryBadgeText}>
-                  {details.brand ? ' - ' : ''}{product.categoryName}
+                  {details.brand ? ' - ' : ''}{tCat(product.categoryName)}
                 </Text>
               ) : null}
             </View>
           )}
 
-          <Text style={styles.titleText}>{product.name}</Text>
+          <Text style={styles.titleText}>{tProd(product)}</Text>
           <Text style={styles.unitText}>{unit}</Text>
 
           {/* Price, MRP & Savings Row */}
@@ -417,12 +437,18 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
             {discount > 0 && <Text style={styles.mrpPrice}>₹{mrp}</Text>}
             {discount > 0 && (
               <View style={styles.savingsPill}>
-                <Text style={styles.savingsText}>Save ₹{mrp - price}</Text>
+                <Text style={styles.savingsText}>{t('save', 'Save')} ₹{mrp - price}</Text>
+              </View>
+            )}
+            {isComingSoon && (
+              <View style={styles.comingSoonBadge}>
+                <Feather name="clock" size={11} color="#B45309" style={{ marginRight: 4 }} />
+                <Text style={styles.comingSoonBadgeText}>{t('comingSoon', 'COMING SOON')}</Text>
               </View>
             )}
             {isOutOfStock && (
               <View style={styles.outOfStockBadge}>
-                <Text style={styles.outOfStockText}>OUT OF STOCK</Text>
+                <Text style={styles.outOfStockText}>{t('outOfStock', 'OUT OF STOCK')}</Text>
               </View>
             )}
           </View>
@@ -435,7 +461,7 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
         {/* Pack Size / Variant Selector (Real Backend Data) */}
         {variantsList.length > 1 && (
           <View style={styles.fluidSection}>
-            <Text style={styles.sectionHeading}>Select Pack Size</Text>
+            <Text style={styles.sectionHeading}>{t('selectPackSize', 'Select Pack Size')}</Text>
             <View style={styles.variantChipsWrap}>
               {variantsList.map((v) => {
                 const isSelected = selectedVariant?.id === v.id;
@@ -463,21 +489,21 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
         <View style={styles.guaranteeBanner}>
           <Feather name="shield" size={22} color={Colors.primaryDark} style={{ marginRight: 12 }} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.guaranteeTitle}>R2Cart Freshness Guarantee</Text>
+            <Text style={styles.guaranteeTitle}>R2Cart {t('freshnessGuarantee', 'Freshness Guarantee')}</Text>
             <Text style={styles.guaranteeSub}>
-              Quality checked at our Hathua sorting facility. 100% replacement guarantee if not completely satisfied.
+              {t('freshnessSub', 'Quality checked at our Hathua sorting facility. 100% replacement guarantee if not completely satisfied.')}
             </Text>
           </View>
         </View>
 
         {/* Product Details & Specifications (Real Backend Data) */}
         <View style={styles.fluidSection}>
-          <Text style={styles.sectionHeading}>Product Details</Text>
+          <Text style={styles.sectionHeading}>{t('productDetails', 'Product Details')}</Text>
           {details.summary ? (
-            <Text style={styles.descText}>{details.summary}</Text>
+            <Text style={styles.descText}>{tText(details.summary)}</Text>
           ) : (
             <Text style={styles.descText}>
-              {product.description || 'Fresh daily essential delivered straight to your doorstep in Hathua.'}
+              {tText(product.description || 'Fresh daily essential delivered straight to your doorstep in Hathua.')}
             </Text>
           )}
 
@@ -595,37 +621,76 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
           <Text style={styles.barUnit}>{unit}</Text>
         </View>
 
-        {isOutOfStock ? (
-          <View style={styles.outOfStockBtn}>
-            <Text style={styles.outOfStockBtnText}>Out of Stock</Text>
+        {isComingSoon ? (
+          <View style={styles.comingSoonBottomBtn}>
+            <Feather name="clock" size={16} color="#B45309" style={{ marginRight: 6 }} />
+            <Text style={styles.comingSoonBottomBtnText}>{t('comingSoon', 'Coming Soon')}</Text>
           </View>
-        ) : qty === 0 ? (
+        ) : isOutOfStock ? (
+          <View style={styles.outOfStockBtn}>
+            <Text style={styles.outOfStockBtnText}>{t('outOfStock', 'Out of Stock')}</Text>
+          </View>
+        ) : product.orderMode === 'CONTACT_REQUEST' ? (
           <TouchableOpacity
-            style={styles.bigAddBtn}
+            style={styles.bigEnquireBtn}
             activeOpacity={0.85}
-            onPress={() => addToCart(product, selectedVariant?.id)}
+            onPress={() => setEnquiryModalOpen(true)}
           >
-            <Feather name="shopping-bag" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.bigAddBtnText}>Add to Basket</Text>
+            <Feather name="phone-call" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.bigEnquireBtnText}>
+              {lang === 'hi' ? 'कॉल / कोट का अनुरोध करें' : 'Request Call / Custom Quote'}
+            </Text>
           </TouchableOpacity>
         ) : (
-          <View style={styles.bigQtyControl}>
-            <TouchableOpacity
-              style={styles.bigQtyTouch}
-              onPress={() => removeFromCart(product.id, selectedVariant?.id)}
-            >
-              <Feather name="minus" size={14} color="#FFFFFF" />
-            </TouchableOpacity>
-            <Text style={styles.bigQtyNum}>{qty}</Text>
-            <TouchableOpacity
-              style={styles.bigQtyTouch}
-              onPress={() => addToCart(product, selectedVariant?.id)}
-            >
-              <Feather name="plus" size={14} color="#FFFFFF" />
-            </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {product.orderMode === 'BOTH' && (
+              <TouchableOpacity
+                style={styles.secondaryEnquireBtn}
+                activeOpacity={0.85}
+                onPress={() => setEnquiryModalOpen(true)}
+              >
+                <Feather name="phone-call" size={14} color="#059669" style={{ marginRight: 5 }} />
+                <Text style={styles.secondaryEnquireBtnText}>
+                  {lang === 'hi' ? 'पूछताछ' : 'Enquire'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {qty === 0 ? (
+              <TouchableOpacity
+                style={styles.bigAddBtn}
+                activeOpacity={0.85}
+                onPress={() => addToCart(product, selectedVariant?.id)}
+              >
+                <Feather name="shopping-bag" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.bigAddBtnText}>{t('addToBasket', 'Add to Basket')}</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.bigQtyControl}>
+                <TouchableOpacity
+                  style={styles.bigQtyTouch}
+                  onPress={() => removeFromCart(product.id, selectedVariant?.id)}
+                >
+                  <Feather name="minus" size={14} color="#FFFFFF" />
+                </TouchableOpacity>
+                <Text style={styles.bigQtyNum}>{qty}</Text>
+                <TouchableOpacity
+                  style={styles.bigQtyTouch}
+                  onPress={() => addToCart(product, selectedVariant?.id)}
+                >
+                  <Feather name="plus" size={14} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
       </View>
+
+      {/* Product Enquiry Modal */}
+      <ProductEnquiryModal
+        visible={enquiryModalOpen}
+        product={product}
+        onClose={() => setEnquiryModalOpen(false)}
+      />
     </View>
   );
 };
@@ -827,6 +892,21 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '800',
     color: '#059669',
+  },
+  comingSoonBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+  },
+  comingSoonBadgeText: {
+    color: '#B45309',
+    fontWeight: '800',
+    fontSize: 10,
   },
   outOfStockBadge: {
     backgroundColor: '#FEE2E2',
@@ -1046,6 +1126,53 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 13.5,
+  },
+  bigEnquireBtn: {
+    backgroundColor: '#059669',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  bigEnquireBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 13.5,
+  },
+  secondaryEnquireBtn: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9.5,
+    borderRadius: 10,
+  },
+  secondaryEnquireBtnText: {
+    color: '#059669',
+    fontWeight: '700',
+    fontSize: 12.5,
+  },
+  panIndiaPill: {
+    backgroundColor: '#EDE9FE',
+    borderColor: '#DDD6FE',
+  },
+  comingSoonBottomBtn: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    borderRadius: 12,
+  },
+  comingSoonBottomBtnText: {
+    color: '#B45309',
+    fontWeight: '800',
+    fontSize: 13,
   },
   outOfStockBtn: {
     backgroundColor: '#E2E8F0',

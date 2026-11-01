@@ -11,6 +11,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
 import { Category } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
+import { dataCache } from '../../services/dataCache';
 
 const { width } = Dimensions.get('window');
 const CAT_COL_WIDTH = (width - 32 - 24) / 4; // 4 columns with 8px gap
@@ -76,7 +77,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = React.memo(({
             <Text style={styles.toggleBtnText}>
               {expanded
                 ? (lang === 'hi' ? 'कम देखें' : 'Show Less')
-                : (lang === 'hi' ? `सभी देखें (${categories.length}) >` : `View All (${categories.length}) >`)}
+                : (lang === 'hi' ? `सभी देखें (${categories.length})` : `View All (${categories.length})`)}
             </Text>
           </TouchableOpacity>
         )}
@@ -86,6 +87,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = React.memo(({
         {displayList.map((cat, idx) => {
           const imgUri = cat.image || (cat as any).imageUrl;
           const bgCol = cat.color || PASTEL_COLORS[idx % PASTEL_COLORS.length];
+          const isSoon = dataCache.isCategoryComingSoon(cat.slug);
 
           return (
             <TouchableOpacity
@@ -94,17 +96,29 @@ export const CategoryGrid: React.FC<CategoryGridProps> = React.memo(({
               activeOpacity={0.8}
               onPress={() => onCategoryPress(cat)}
             >
-              <View style={[styles.outerLayer, { backgroundColor: bgCol }]}>
-                {imgUri ? (
-                  /* Inner Image: Circular (borderRadius: 30) matching website's border-radius: 50% */
-                  <Image
-                    source={{ uri: optimizeThumb(imgUri, 160) }}
-                    style={styles.innerImg}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <Feather name="shopping-bag" size={28} color={Colors.primaryDark} />
-                )}
+              <View style={styles.catIconContainer}>
+                <View style={[styles.outerLayer, { backgroundColor: bgCol }]}>
+                  {imgUri ? (
+                    /* Inner Image: Circular (borderRadius: 30) matching website's border-radius: 50% */
+                    <Image
+                      source={{ uri: optimizeThumb(imgUri, 160) }}
+                      style={styles.innerImg}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Feather name="shopping-bag" size={28} color={Colors.primaryDark} />
+                  )}
+                </View>
+                {cat.badgeActive && cat.badgeText ? (
+                  <View style={styles.catCustomBadge}>
+                    <Text style={styles.catCustomBadgeText}>{cat.badgeText}</Text>
+                  </View>
+                ) : isSoon ? (
+                  <View style={styles.catSoonBadge}>
+                    <Feather name="clock" size={8} color="#B45309" />
+                    <Text style={styles.catSoonBadgeText}>{t('soonBadge', 'Soon')}</Text>
+                  </View>
+                ) : null}
               </View>
 
               <Text style={styles.label} numberOfLines={2}>
@@ -163,6 +177,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  catIconContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
   // Outer layer is NOT a circle - soft rounded rectangle matching website (.category-grid a div)
   outerLayer: {
     width: 70,
@@ -170,7 +189,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
   },
   // Inner image is circular (50% radius) matching website (.category-grid a div img)
   innerImg: {
@@ -185,5 +203,46 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 14,
     paddingHorizontal: 2,
+  },
+  catSoonBadge: {
+    position: 'absolute',
+    top: -6,
+    alignSelf: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 10,
+    elevation: 3,
+  },
+  catSoonBadgeText: {
+    fontSize: 7.5,
+    fontWeight: '800',
+    color: '#B45309',
+    marginLeft: 2,
+  },
+  catCustomBadge: {
+    position: 'absolute',
+    top: -6,
+    alignSelf: 'center',
+    backgroundColor: '#0284C7',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+    elevation: 3,
+  },
+  catCustomBadgeText: {
+    fontSize: 7.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

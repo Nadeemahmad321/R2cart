@@ -30,6 +30,7 @@ import {
   BannerSkeleton,
   CategoryGridSkeleton,
   ProductCardSkeleton,
+  Skeleton,
 } from '../../components/common/Skeleton';
 import {
   HeroCarousel,
@@ -48,7 +49,7 @@ const { width } = Dimensions.get('window');
 export const HomeScreen = ({ navigation }: any) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { lang, toggleLang, t, tCat, tEta } = useLanguage();
+  const { lang, toggleLang, t, tCat, tEta, prefetchTranslations } = useLanguage();
   const { addToCart, removeFromCart, getItemQuantity, totalItems, grandTotal } = useCart();
 
   // Double back to exit handler on root screen
@@ -82,6 +83,7 @@ export const HomeScreen = ({ navigation }: any) => {
   const [bestSellers, setBestSellers] = useState<Product[]>([]);
   const [topPicks, setTopPicks] = useState<Product[]>([]);
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [loadingAddresses, setLoadingAddresses] = useState<boolean>(Boolean(user));
   const [availableVillages, setAvailableVillages] = useState<string[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [locationModalVisible, setLocationModalVisible] = useState<boolean>(false);
@@ -116,7 +118,7 @@ export const HomeScreen = ({ navigation }: any) => {
 
   const fetchData = async () => {
     try {
-      const [catRes, prodRes, bannerRes, bestRes, picksRes, deliveryRes, addrRes] = await Promise.allSettled([
+      const [catRes, prodRes, bannerRes, bestRes, picksRes, deliveryRes, addrRes, settingsRes] = await Promise.allSettled([
         api.getCategories(),
         api.getProducts({ limit: 50 }),
         api.getBanners(),
@@ -124,7 +126,12 @@ export const HomeScreen = ({ navigation }: any) => {
         api.getTopPicks(),
         api.getDelivery(),
         user ? api.getAddresses() : Promise.resolve({ data: [] }),
+        api.getSettings(),
       ]);
+
+      if (settingsRes.status === 'fulfilled' && settingsRes.value?.data) {
+        dataCache.setSettings(settingsRes.value.data);
+      }
 
       let prodList: Product[] = [];
       if (prodRes.status === 'fulfilled' && prodRes.value?.data) {
@@ -133,8 +140,9 @@ export const HomeScreen = ({ navigation }: any) => {
         dataCache.populateFromProducts(prodList);
       }
 
+      let catList: any[] = [];
       if (catRes.status === 'fulfilled' && catRes.value?.data) {
-        const catList = Array.isArray(catRes.value.data) ? catRes.value.data.filter(c => c && c.id) : [];
+        catList = Array.isArray(catRes.value.data) ? catRes.value.data.filter(c => c && c.id) : [];
         setCategories(catList);
         dataCache.setCategories(catList);
       }
@@ -143,6 +151,9 @@ export const HomeScreen = ({ navigation }: any) => {
         const bList = Array.isArray(bannerRes.value.data) ? bannerRes.value.data.filter(b => b && b.id) : [];
         setBanners(bList);
       }
+
+      // Background prefetch translations for all dynamic products & categories from backend
+      prefetchTranslations([...prodList, ...catList]);
 
       // Best Sellers
       let bestList: Product[] = [];
@@ -169,6 +180,7 @@ export const HomeScreen = ({ navigation }: any) => {
       // Dynamic delivery areas and villages from backend (Zero hardcoding)
       let dynamicVillages: string[] = [];
       if (deliveryRes.status === 'fulfilled' && deliveryRes.value?.data) {
+        dataCache.setDeliveryData(deliveryRes.value.data);
         const raw = deliveryRes.value.data as any;
         const villagesList = Array.isArray(raw.villages) ? raw.villages : (Array.isArray(raw) ? raw : []);
         dynamicVillages = villagesList.map((v: any) => v.name || v.title).filter(Boolean);
@@ -197,6 +209,7 @@ export const HomeScreen = ({ navigation }: any) => {
         setSavedAddresses([]);
         setSelectedAddressId(null);
       }
+      setLoadingAddresses(false);
 
       // Persist instant home cache for 0ms initial launch next time
       if (prodList.length > 0) {
@@ -262,6 +275,7 @@ export const HomeScreen = ({ navigation }: any) => {
   // Sync user saved addresses when user logs in or out
   useEffect(() => {
     if (user) {
+      setLoadingAddresses(true);
       api.getAddresses().then(res => {
         if (res.data && Array.isArray(res.data)) {
           setSavedAddresses(res.data);
@@ -275,10 +289,13 @@ export const HomeScreen = ({ navigation }: any) => {
             setSelectedAddressId(null);
           }
         }
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => {
+        setLoadingAddresses(false);
+      });
     } else {
       setSavedAddresses([]);
       setSelectedAddressId(null);
+      setLoadingAddresses(false);
     }
   }, [user]);
 
@@ -296,7 +313,9 @@ export const HomeScreen = ({ navigation }: any) => {
               setSelectedAddressId(null);
             }
           }
-        }).catch(() => {});
+        }).catch(() => {}).finally(() => {
+          setLoadingAddresses(false);
+        });
 
         // 2-Hour Address Selection / Confirmation System for Logged-In Users
         const checkTwoHourAddressPrompt = async () => {
@@ -424,8 +443,8 @@ export const HomeScreen = ({ navigation }: any) => {
 
       {/* #3. Shop by Category (4-Column Responsive Grid) */}
       <CategoryGrid
-        title="Shop by category"
-        subtitle="Everything your home needs"
+        title={t('shopByCategory')}
+        subtitle={dataCache.getSettings()?.tagline || (lang === 'hi' ? 'ताज़ा और शुद्ध रोज़मर्रा का सामान' : 'Everything your home needs')}
         categories={categories}
         onCategoryPress={handleCategoryPress}
       />
@@ -490,19 +509,24 @@ export const HomeScreen = ({ navigation }: any) => {
       />
 
       {/* #8. Category Product Rails for ALL categories (Dairy, Atta, Fruits, etc. dynamically) */}
-      {allCategoryRails.map(({ category, items }) => (
-        <ProductRail
-          key={`cat_rail_${category.id || category.slug}`}
-          title={category.name}
-          subtitle={`Fresh ${category.name.toLowerCase()} delivered in 15 mins`}
-          products={items}
-          onProductPress={handleProductPress}
-          onAddToCart={addToCart}
-          onRemoveFromCart={removeFromCart}
-          getItemQuantity={getItemQuantity}
-          onSeeAll={() => handleCategoryPress(category)}
-        />
-      ))}
+      {allCategoryRails.map(({ category, items }) => {
+        const isCatSoon = dataCache.isCategoryComingSoon(category.slug);
+        const backendEta = dataCache.getEstimatedDelivery('20-30 mins');
+        return (
+          <ProductRail
+            key={`cat_rail_${category.id || category.slug}`}
+            title={category.name}
+            badge={isCatSoon ? (lang === 'hi' ? 'जल्द आएगा' : 'Coming Soon') : undefined}
+            subtitle={isCatSoon ? (lang === 'hi' ? 'जल्द ही आपके लिए उपलब्ध होगा' : 'Opening soon for orders') : (lang === 'hi' ? `ताज़ा ${tCat(category.name)} • डिलीवरी ${tEta(backendEta)} में` : `Fresh ${category.name.toLowerCase()} delivered in ${backendEta}`)}
+            products={items}
+            onProductPress={handleProductPress}
+            onAddToCart={addToCart}
+            onRemoveFromCart={removeFromCart}
+            getItemQuantity={getItemQuantity}
+            onSeeAll={() => handleCategoryPress(category)}
+          />
+        );
+      })}
 
       {/* #9. Special Offers Rail (High Discounts) */}
       {specialOffers.length > 0 && (
@@ -637,34 +661,40 @@ export const HomeScreen = ({ navigation }: any) => {
         >
           <View style={styles.mobileLocEta}>
             <Feather name="clock" size={12} color="#059669" />
-            <Text style={styles.mobileLocEtaText}>{`${t('deliveryIn')} ${tEta('15-20 mins')}`}</Text>
+            <Text style={styles.mobileLocEtaText}>{`${t('deliveryIn')} ${tEta(dataCache.getEstimatedDelivery('20-30 mins'))}`}</Text>
           </View>
           <View style={styles.mobileLocAddress}>
-            <Feather
-              name={!user ? 'map-pin' : (savedAddresses.length > 0 ? 'map-pin' : 'plus-circle')}
-              size={12}
-              color="#059669"
-              style={{ flexShrink: 0 }}
-            />
-            <Text
-              style={[
-                styles.addressDisplayText,
-                (!user || savedAddresses.length === 0) && { color: Colors.primaryDark, fontWeight: '700' },
-              ]}
-              numberOfLines={1}
-            >
-              {!user
-                ? (lang === 'hi' ? 'पता जोड़ने के लिए लॉगिन करें' : 'Login to add address')
-                : (savedAddresses.length > 0
-                    ? displayAddressText
-                    : (lang === 'hi' ? '+ डिलीवरी पता जोड़ें' : '+ Add delivery address'))}
-            </Text>
-            <Feather
-              name={!user || savedAddresses.length === 0 ? 'chevron-right' : 'chevron-down'}
-              size={12}
-              color="#64748B"
-              style={{ flexShrink: 0 }}
-            />
+            {loadingAddresses && !currentAddress ? (
+              <Skeleton width={80} height={12} borderRadius={4} />
+            ) : (
+              <>
+                <Feather
+                  name={!user ? 'map-pin' : (savedAddresses.length > 0 ? 'map-pin' : 'plus-circle')}
+                  size={12}
+                  color="#059669"
+                  style={{ flexShrink: 0 }}
+                />
+                <Text
+                  style={[
+                    styles.addressDisplayText,
+                    (!user || savedAddresses.length === 0) && { color: Colors.primaryDark, fontWeight: '700' },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {!user
+                    ? (lang === 'hi' ? 'पता जोड़ने के लिए लॉगिन करें' : 'Login to add address')
+                    : (savedAddresses.length > 0
+                        ? displayAddressText
+                        : (lang === 'hi' ? '+ डिलीवरी पता जोड़ें' : '+ Add delivery address'))}
+                </Text>
+                <Feather
+                  name={!user || savedAddresses.length === 0 ? 'chevron-right' : 'chevron-down'}
+                  size={12}
+                  color="#64748B"
+                  style={{ flexShrink: 0 }}
+                />
+              </>
+            )}
           </View>
         </TouchableOpacity>
 
@@ -726,8 +756,8 @@ export const HomeScreen = ({ navigation }: any) => {
                 </Text>
                 <Text style={styles.modalSubheading}>
                   {lang === 'hi'
-                    ? 'ताज़ा किराने का सामान 15-20 मिनट में डिलीवर'
-                    : 'Fresh groceries delivered in 15-20 mins'}
+                    ? `ताज़ा किराने का सामान ${tEta(dataCache.getEstimatedDelivery('20-30 mins'))} में डिलीवर`
+                    : `Fresh groceries delivered in ${dataCache.getEstimatedDelivery('20-30 mins')}`}
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setLocationModalVisible(false)}>
@@ -736,8 +766,15 @@ export const HomeScreen = ({ navigation }: any) => {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
-              {/* If User logged in but has no saved address: Recommend adding address */}
-              {user && savedAddresses.length === 0 && (
+              {/* Skeleton loading while fetching from backend */}
+              {loadingAddresses ? (
+                <View style={{ padding: 16, gap: 12 }}>
+                  <Skeleton width="50%" height={14} borderRadius={4} style={{ marginBottom: 6 }} />
+                  <Skeleton width="100%" height={64} borderRadius={12} />
+                  <Skeleton width="100%" height={64} borderRadius={12} />
+                </View>
+              ) : user && savedAddresses.length === 0 ? (
+                /* If User logged in but has no saved address: Recommend adding address */
                 <View style={styles.noAddressPromptBox}>
                   <View style={styles.noAddressIconCircle}>
                     <Feather name="map-pin" size={26} color={Colors.primaryDark} />
@@ -747,8 +784,8 @@ export const HomeScreen = ({ navigation }: any) => {
                   </Text>
                   <Text style={styles.noAddressPromptSub}>
                     {lang === 'hi'
-                      ? 'तेज़ 15-20 मिनट में डोरस्टेप डिलीवरी के लिए कृपया अपना डिलीवरी पता जोड़ें।'
-                      : 'Please add your delivery address for fast 15-20 min doorstep delivery.'}
+                      ? `तेज़ ${tEta(dataCache.getEstimatedDelivery('20-30 mins'))} में डोरस्टेप डिलीवरी के लिए कृपया अपना डिलीवरी पता जोड़ें।`
+                      : `Please add your delivery address for fast ${dataCache.getEstimatedDelivery('20-30 mins')} doorstep delivery.`}
                   </Text>
                   <TouchableOpacity
                     style={styles.addAddressPrimaryBtn}
@@ -764,7 +801,7 @@ export const HomeScreen = ({ navigation }: any) => {
                     </Text>
                   </TouchableOpacity>
                 </View>
-              )}
+              ) : null}
 
               {/* User Saved Addresses from backend */}
               {user && savedAddresses.length > 0 ? (

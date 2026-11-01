@@ -199,11 +199,17 @@ class ApiService {
     retries = 2
   ): Promise<{ success: boolean; data: T; message?: string }> {
     const token = await this.getToken();
+    const currentLang = (await AsyncStorage.getItem('r2cart_lang_preference')) || 'en';
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
+      'Accept-Language': currentLang,
       ...((options.headers as Record<string, string>) || {}),
     };
+
+    if (options.body && typeof FormData !== 'undefined' && options.body instanceof FormData) {
+      delete headers['Content-Type'];
+    }
 
     if (token) {
       headers.Authorization = `Bearer ${token}`;
@@ -294,7 +300,8 @@ class ApiService {
       body: JSON.stringify({ identifier, password }),
     });
     if (res.data?.accessToken) {
-      await this.setTokens(res.data.accessToken, res.data.refreshToken, 'CUSTOMER');
+      const resolvedRole = res.data?.user?.role === 'DELIVERY_PERSON' ? 'DELIVERY_PERSON' : 'CUSTOMER';
+      await this.setTokens(res.data.accessToken, res.data.refreshToken, resolvedRole);
       if (res.data?.user) {
         await this.setCachedUser(res.data.user);
       }
@@ -385,6 +392,13 @@ class ApiService {
 
   async getProduct(id: string) {
     return this.request(`/products/${id}`);
+  }
+
+  async submitProductEnquiry(productId: string, data: { name: string; phone: string; email?: string; message?: string }) {
+    return this.request(`/products/${productId}/enquire`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   async getCategories() {
@@ -610,9 +624,12 @@ class ApiService {
   async completeDelivery(id: string, payloadOrOtp?: any, recipientName?: string) {
     let body: any = {};
     if (typeof payloadOrOtp === 'string') {
-      body = { otp: payloadOrOtp, recipientName };
+      body = { customerOtp: payloadOrOtp, recipientName };
     } else if (payloadOrOtp && typeof payloadOrOtp === 'object') {
-      body = payloadOrOtp;
+      body = {
+        ...payloadOrOtp,
+        customerOtp: payloadOrOtp.customerOtp || payloadOrOtp.otp,
+      };
     }
     return this.request(`/delivery-portal/orders/${id}/complete-delivery`, {
       method: 'POST',
@@ -624,6 +641,13 @@ class ApiService {
     return this.request(`/delivery-portal/orders/${id}/report-failure`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
+    });
+  }
+
+  async uploadDeliveryProof(id: string, formData: FormData) {
+    return this.request(`/delivery-portal/orders/${id}/upload-proof`, {
+      method: 'POST',
+      body: formData,
     });
   }
 

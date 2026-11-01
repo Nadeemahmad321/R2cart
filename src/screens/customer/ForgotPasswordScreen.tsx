@@ -18,6 +18,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
 import { api } from '../../services/api';
 import { useLanguage } from '../../context/LanguageContext';
+import { PasswordEyeButton } from '../../components/common/PasswordEyeButton';
 
 export const ForgotPasswordScreen = ({ navigation }: any) => {
   const insets = useSafeAreaInsets();
@@ -268,16 +269,10 @@ export const ForgotPasswordScreen = ({ navigation }: any) => {
                     if (errorMsg) setErrorMsg('');
                   }}
                 />
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Feather
-                    name={showPassword ? 'eye' : 'eye-off'}
-                    size={18}
-                    color={showPassword ? '#059669' : '#64748B'}
-                  />
-                </TouchableOpacity>
+                <PasswordEyeButton
+                  visible={showPassword}
+                  onToggle={() => setShowPassword(!showPassword)}
+                />
               </View>
 
               {/* Confirm New Password */}
@@ -294,16 +289,10 @@ export const ForgotPasswordScreen = ({ navigation }: any) => {
                     if (errorMsg) setErrorMsg('');
                   }}
                 />
-                <TouchableOpacity
-                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Feather
-                    name={showConfirmPassword ? 'eye' : 'eye-off'}
-                    size={18}
-                    color={showConfirmPassword ? '#059669' : '#64748B'}
-                  />
-                </TouchableOpacity>
+                <PasswordEyeButton
+                  visible={showConfirmPassword}
+                  onToggle={() => setShowConfirmPassword(!showConfirmPassword)}
+                />
               </View>
 
               {/* Resend & Change Row */}

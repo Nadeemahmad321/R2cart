@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  Modal,
   ActivityIndicator,
   Platform,
   ScrollView,
@@ -21,6 +22,7 @@ import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useToast } from '../../context/ToastContext';
+import { PasswordEyeButton } from '../../components/common/PasswordEyeButton';
 
 export const CustomerSignUpScreen = ({ navigation }: any) => {
   const insets = useSafeAreaInsets();
@@ -42,6 +44,13 @@ export const CustomerSignUpScreen = ({ navigation }: any) => {
   const [seconds, setSeconds] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [accountCreatedVisible, setAccountCreatedVisible] = useState(false);
+
+  const handleStartShopping = () => {
+    setAccountCreatedVisible(false);
+    navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+  };
 
   // Handle hardware back without looping
   useFocusEffect(
@@ -98,6 +107,15 @@ export const CustomerSignUpScreen = ({ navigation }: any) => {
       setErrorMsg(lang === 'hi' ? 'पासवर्ड मेल नहीं खा रहे हैं' : 'Passwords do not match');
       return;
     }
+    if (!agreedToTerms) {
+      const msg =
+        lang === 'hi'
+          ? 'आगे बढ़ने के लिए कृपया सेवा की शर्तों और गोपनीयता नीति को स्वीकार करें'
+          : 'Please agree to the Terms of Service and Privacy Policy to continue';
+      setErrorMsg(msg);
+      showToast(msg, 'error');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -110,11 +128,12 @@ export const CustomerSignUpScreen = ({ navigation }: any) => {
       });
       setSeconds(60);
       setStage('OTP');
-      Alert.alert(
-        lang === 'hi' ? 'ओटीपी भेजा गया' : 'OTP Sent',
+      showToast(
         lang === 'hi'
-          ? `आपके ईमेल ${cleanEmail} पर 6-अंकों का कोड भेजा गया है।`
-          : `A 6-digit verification code has been sent to ${cleanEmail}`
+          ? `ओटीपी ${cleanEmail} पर भेज दिया गया है`
+          : `Verification code sent to ${cleanEmail}`,
+        'success',
+        'top'
       );
     } catch (err: any) {
       const isNet =
@@ -146,9 +165,12 @@ export const CustomerSignUpScreen = ({ navigation }: any) => {
         mode: 'signup',
       });
       setSeconds(60);
-      Alert.alert(
-        lang === 'hi' ? 'ओटीपी पुनः भेजा गया' : 'OTP Resent',
-        `A new 6-digit code has been sent to ${email.trim().toLowerCase()}`
+      showToast(
+        lang === 'hi'
+          ? 'नया ओटीपी कोड आपके ईमेल पर भेज दिया गया है'
+          : `New 6-digit code sent to ${email.trim().toLowerCase()}`,
+        'success',
+        'top'
       );
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to resend OTP');
@@ -177,18 +199,8 @@ export const CustomerSignUpScreen = ({ navigation }: any) => {
         setAuthSession(res.data.user, 'CUSTOMER');
       }
 
-      Alert.alert(
-        lang === 'hi' ? 'खाता सफलतापूर्वक बन गया! 🎉' : 'Account Created! 🎉',
-        lang === 'hi'
-          ? 'R2Cart में आपका स्वागत है। आप तुरंत ताज़ा किराना ऑर्डर कर सकते हैं।'
-          : 'Welcome to R2Cart! You can now order fresh groceries.',
-        [
-          {
-            text: lang === 'hi' ? 'शॉपिंग शुरू करें' : 'Start Shopping',
-            onPress: () => navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] }),
-          },
-        ]
-      );
+      // Show beautiful custom celebratory success modal instead of default OS alert
+      setAccountCreatedVisible(true);
     } catch (err: any) {
       setErrorMsg(err.message || 'Invalid or expired OTP code. Please try again.');
     } finally {
@@ -329,16 +341,10 @@ export const CustomerSignUpScreen = ({ navigation }: any) => {
                     if (errorMsg) setErrorMsg('');
                   }}
                 />
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Feather
-                    name={showPassword ? 'eye' : 'eye-off'}
-                    size={18}
-                    color={showPassword ? '#059669' : '#64748B'}
-                  />
-                </TouchableOpacity>
+                <PasswordEyeButton
+                  visible={showPassword}
+                  onToggle={() => setShowPassword(!showPassword)}
+                />
               </View>
 
               {/* Confirm Password */}
@@ -355,21 +361,55 @@ export const CustomerSignUpScreen = ({ navigation }: any) => {
                     if (errorMsg) setErrorMsg('');
                   }}
                 />
-                <TouchableOpacity
-                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Feather
-                    name={showConfirmPassword ? 'eye' : 'eye-off'}
-                    size={18}
-                    color={showConfirmPassword ? '#059669' : '#64748B'}
-                  />
-                </TouchableOpacity>
+                <PasswordEyeButton
+                  visible={showConfirmPassword}
+                  onToggle={() => setShowConfirmPassword(!showConfirmPassword)}
+                />
               </View>
+
+              {/* Terms of Service & Privacy Policy Consent Checkbox */}
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                onPress={() => {
+                  setAgreedToTerms(!agreedToTerms);
+                  if (errorMsg) setErrorMsg('');
+                }}
+                activeOpacity={0.8}
+              >
+                <View
+                  style={[
+                    styles.checkboxBox,
+                    agreedToTerms && styles.checkboxBoxChecked,
+                  ]}
+                >
+                  {agreedToTerms && <Feather name="check" size={13} color="#FFFFFF" />}
+                </View>
+
+                <Text style={styles.checkboxLabel}>
+                  {lang === 'hi' ? 'मैं ' : 'I agree to the '}
+                  <Text
+                    style={styles.checkboxLink}
+                    onPress={() => Linking.openURL('https://www.r2cart.in/terms').catch(() => {})}
+                  >
+                    {lang === 'hi' ? 'सेवा की शर्तें (Terms of Service)' : 'Terms of Service'}
+                  </Text>
+                  {lang === 'hi' ? ' और ' : ' and '}
+                  <Text
+                    style={styles.checkboxLink}
+                    onPress={() => Linking.openURL('https://www.r2cart.in/privacy').catch(() => {})}
+                  >
+                    {lang === 'hi' ? 'गोपनीयता नीति (Privacy Policy)' : 'Privacy Policy'}
+                  </Text>
+                  {lang === 'hi' ? ' से सहमत हूँ।' : '.'}
+                </Text>
+              </TouchableOpacity>
 
               {/* Pill CTA Button */}
               <TouchableOpacity
-                style={[styles.primaryPillBtn, loading && styles.btnDisabled]}
+                style={[
+                  styles.primaryPillBtn,
+                  (!agreedToTerms || loading) && styles.btnDisabled,
+                ]}
                 onPress={handleRequestOtp}
                 disabled={loading}
                 activeOpacity={0.88}
@@ -378,13 +418,36 @@ export const CustomerSignUpScreen = ({ navigation }: any) => {
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <Text style={styles.primaryPillBtnText}>
-                    {lang === 'hi' ? 'ओटीपी प्राप्त करें' : 'Create Account & Send OTP'}
+                    {lang === 'hi' ? 'खाता बनाएं' : 'Create Account'}
                   </Text>
                 )}
               </TouchableOpacity>
             </>
           ) : (
             <>
+              {/* High-End OTP Sent Feedback Card */}
+              <View style={styles.otpSentCard}>
+                <View style={styles.otpSentIconBox}>
+                  <Feather name="mail" size={20} color="#059669" />
+                  <View style={styles.otpSentCheckBadge}>
+                    <Feather name="check" size={9} color="#FFFFFF" />
+                  </View>
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.otpSentTitle}>
+                    {lang === 'hi' ? 'वेरिफिकेशन कोड भेजा गया' : 'Verification Code Sent'}
+                  </Text>
+                  <Text style={styles.otpSentEmail} numberOfLines={1}>
+                    {email.trim().toLowerCase()}
+                  </Text>
+                  <Text style={styles.otpSentHint}>
+                    {lang === 'hi'
+                      ? 'कृपया अपना इनबॉक्स या स्पैम फ़ोल्डर चेक करें'
+                      : 'Check your inbox or spam folder for 6-digit OTP'}
+                  </Text>
+                </View>
+              </View>
+
               {/* OTP Input Underlined */}
               <View style={styles.underlineInputRow}>
                 <Feather name="shield" size={18} color="#64748B" style={styles.inputIcon} />
@@ -477,30 +540,65 @@ export const CustomerSignUpScreen = ({ navigation }: any) => {
               {lang === 'hi' ? 'गेस्ट के रूप में जारी रखें' : 'Continue as guest'}
             </Text>
           </TouchableOpacity>
-
-          {/* Legal Consent for Google Play compliance */}
-          <View style={styles.legalConsentWrap}>
-            <Text style={styles.legalConsentText}>
-              {lang === 'hi' ? 'साइन अप करके, आप हमारी ' : 'By creating an account, you agree to R2Cart\'s '}
-              <Text
-                style={styles.legalLink}
-                onPress={() => Linking.openURL('https://www.r2cart.in/terms').catch(() => {})}
-              >
-                {lang === 'hi' ? 'सेवा की शर्तें' : 'Terms of Service'}
-              </Text>
-              {lang === 'hi' ? ' और ' : ' & '}
-              <Text
-                style={styles.legalLink}
-                onPress={() => Linking.openURL('https://www.r2cart.in/privacy').catch(() => {})}
-              >
-                {lang === 'hi' ? 'गोपनीयता नीति' : 'Privacy Policy'}
-              </Text>
-              {lang === 'hi' ? ' से सहमत होते हैं।' : '.'}
-            </Text>
-          </View>
         </View>
         </View>
       </ScrollView>
+
+      {/* Celebratory Account Created Success Modal */}
+      <Modal
+        visible={accountCreatedVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleStartShopping}
+      >
+        <View style={styles.successModalOverlay}>
+          <View style={styles.successModalCard}>
+            {/* Celebratory Icon with Glow Ring */}
+            <View style={styles.successIconRingOuter}>
+              <View style={styles.successIconRingInner}>
+                <Feather name="check" size={30} color="#FFFFFF" />
+              </View>
+            </View>
+
+            {/* Title & Celebration */}
+            <Text style={styles.successTitle}>
+              {lang === 'hi' ? 'खाता सफलतापूर्वक बन गया! 🎉' : 'Account Created! 🎉'}
+            </Text>
+            <Text style={styles.successSub}>
+              {lang === 'hi'
+                ? 'R2Cart में आपका स्वागत है! अब आप ताज़ा किराना, फल और सब्ज़ियाँ मिनटों में ऑर्डर कर सकते हैं।'
+                : 'Welcome to R2Cart! You are now ready to order fresh farm produce, groceries and daily essentials with ultra-fast delivery.'}
+            </Text>
+
+            {/* Welcome Perks Pill Row */}
+            <View style={styles.perksContainer}>
+              <View style={styles.perkItem}>
+                <Feather name="zap" size={14} color="#059669" />
+                <Text style={styles.perkText}>
+                  {lang === 'hi' ? 'सुपरफास्ट डिलीवरी' : '15-Min Delivery'}
+                </Text>
+              </View>
+              <View style={styles.perkItem}>
+                <Feather name="shield" size={14} color="#059669" />
+                <Text style={styles.perkText}>
+                  {lang === 'hi' ? '100% ताज़ा गारंटी' : 'Freshness Guarantee'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Start Shopping CTA Button */}
+            <TouchableOpacity
+              style={styles.startShoppingBtn}
+              onPress={handleStartShopping}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.startShoppingBtnText}>
+                {lang === 'hi' ? 'शॉपिंग शुरू करें 🛒' : 'Start Shopping 🛒'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -650,6 +748,187 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#64748B',
     textDecorationLine: 'underline',
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 14,
+    marginBottom: 16,
+    paddingHorizontal: 2,
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.8,
+    borderColor: '#94A3B8',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    marginTop: 2,
+  },
+  checkboxBoxChecked: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  checkboxLabel: {
+    flex: 1,
+    fontSize: 12.5,
+    color: '#475569',
+    lineHeight: 18,
+  },
+  checkboxLink: {
+    color: '#059669',
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  // Dedicated OTP Sent Card Styles
+  otpSentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 14,
+    padding: 13,
+    marginBottom: 20,
+    width: '100%',
+  },
+  otpSentIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#D1FAE5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otpSentCheckBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
+    backgroundColor: '#059669',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otpSentTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  otpSentEmail: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#059669',
+    marginTop: 1,
+  },
+  otpSentHint: {
+    fontSize: 11,
+    color: '#047857',
+    marginTop: 2,
+  },
+  // Celebratory Success Modal Styles
+  successModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  successModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 28,
+    paddingBottom: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  successIconRingOuter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 2,
+    borderColor: '#86EFAC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  successIconRingInner: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#059669',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  successTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  successSub: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  perksContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 22,
+    justifyContent: 'center',
+  },
+  perkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 5,
+  },
+  perkText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  startShoppingBtn: {
+    width: '100%',
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#059669',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  startShoppingBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
   legalConsentWrap: {
     marginTop: 18,

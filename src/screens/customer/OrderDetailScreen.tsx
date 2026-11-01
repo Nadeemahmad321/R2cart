@@ -52,31 +52,32 @@ const formatDateTime = (val: any) => {
   });
 };
 
-const getStatusTheme = (status: string) => {
+const getStatusTheme = (status: string, tStatus?: (s: string) => string) => {
   const s = (status || '').toUpperCase();
+  const label = tStatus ? tStatus(status) : status;
   if (['DELIVERED', 'COMPLETED'].includes(s)) {
-    return { bg: '#ECFDF5', text: '#047857', border: '#A7F3D0', label: 'Delivered', icon: 'check-circle' };
+    return { key: 'DELIVERED', bg: '#ECFDF5', text: '#047857', border: '#A7F3D0', label: label || 'Delivered', icon: 'check-circle' };
   }
-  if (['CANCELLED', 'CANCELED'].includes(s)) {
-    return { bg: '#FEF2F2', text: '#B91C1C', border: '#FECACA', label: 'Cancelled', icon: 'x-circle' };
+  if (['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED'].includes(s)) {
+    return { key: 'CANCELLED', bg: '#FEF2F2', text: '#B91C1C', border: '#FECACA', label: label || 'Cancelled', icon: 'x-circle' };
   }
   if (['OUT_FOR_DELIVERY', 'OUT FOR DELIVERY', 'IN_TRANSIT'].includes(s)) {
-    return { bg: '#FFEDD5', text: '#C2410C', border: '#FED7AA', label: 'Out for Delivery', icon: 'truck' };
+    return { key: 'OUT_FOR_DELIVERY', bg: '#FFEDD5', text: '#C2410C', border: '#FED7AA', label: label || 'Out for Delivery', icon: 'truck' };
   }
   if (['PACKING', 'PACKED'].includes(s)) {
-    return { bg: '#FEF3C7', text: '#B45309', border: '#FDE68A', label: 'Packing', icon: 'package' };
+    return { key: 'PACKING', bg: '#FEF3C7', text: '#B45309', border: '#FDE68A', label: label || 'Packing', icon: 'package' };
   }
   if (['CONFIRMED', 'ACCEPTED'].includes(s)) {
-    return { bg: '#E0E7FF', text: '#4338CA', border: '#C7D2FE', label: 'Confirmed', icon: 'clipboard' };
+    return { key: 'CONFIRMED', bg: '#E0E7FF', text: '#4338CA', border: '#C7D2FE', label: label || 'Confirmed', icon: 'clipboard' };
   }
-  return { bg: '#E0F2FE', text: '#0369A1', border: '#BAE6FD', label: status || 'New', icon: 'clock' };
+  return { key: 'PLACED', bg: '#E0F2FE', text: '#0369A1', border: '#BAE6FD', label: label || status || 'New', icon: 'clock' };
 };
 
 export const OrderDetailScreen = ({ route, navigation }: any) => {
   const orderId = route.params?.orderId || route.params?.id || route.params?.orderNumber;
   const insets = useSafeAreaInsets();
   const { addToCart } = useCart();
-  const { lang } = useLanguage();
+  const { lang, t, tProd, tStatus, prefetchTranslations } = useLanguage();
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -150,6 +151,8 @@ export const OrderDetailScreen = ({ route, navigation }: any) => {
       const data = res?.data?.data || res?.data?.order || res?.data || res;
       if (data && (data.id || data._id || data.orderNumber)) {
         setOrder(data);
+        const itemNames = (data.items || []).map((i: any) => i.name).filter(Boolean);
+        if (itemNames.length > 0) prefetchTranslations(itemNames);
       }
     } catch (err: any) {
       if (!order) {
@@ -364,12 +367,12 @@ export const OrderDetailScreen = ({ route, navigation }: any) => {
   }
 
   const rawStatus = (order.status || '').trim();
-  const statusTheme = getStatusTheme(rawStatus);
-  const isCancelled = statusTheme.label === 'Cancelled';
-  const isDelivered = statusTheme.label === 'Delivered';
-  const isCancellable = ['New', 'Confirmed', 'Packing'].includes(statusTheme.label);
+  const statusTheme = getStatusTheme(rawStatus, tStatus);
+  const isCancelled = statusTheme.key === 'CANCELLED';
+  const isDelivered = statusTheme.key === 'DELIVERED';
+  const isCancellable = ['PLACED', 'CONFIRMED', 'PACKING'].includes(statusTheme.key);
   const isScheduled = order.deliveryType === 'SCHEDULED';
-  const isOutForDelivery = statusTheme.label === 'Out for Delivery';
+  const isOutForDelivery = statusTheme.key === 'OUT_FOR_DELIVERY';
 
   // Timeline Step Calculations matching Website
   const deliveryPersonName = order.deliveryPerson?.name || order.assignedDeliveryPerson?.name;
@@ -546,8 +549,8 @@ export const OrderDetailScreen = ({ route, navigation }: any) => {
           {/* Items in this Order Section */}
           <View style={styles.sectionCard}>
             <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionCardTitle}>Items in this Order</Text>
-              <Text style={styles.sectionCountText}>{(order.items || []).length} items</Text>
+              <Text style={styles.sectionCardTitle}>{t('itemsInOrder', 'Items in this Order')}</Text>
+              <Text style={styles.sectionCountText}>{(order.items || []).length} {t('items', 'items')}</Text>
             </View>
 
             <View style={styles.itemsListContainer}>
@@ -571,7 +574,7 @@ export const OrderDetailScreen = ({ route, navigation }: any) => {
                       </View>
                       <View style={styles.itemMetaCol}>
                         <Text style={styles.itemName} numberOfLines={2}>
-                          {item.name}
+                          {tProd(item) || item.name}
                         </Text>
                         <Text style={styles.itemPackDetails}>
                           {item.unit || 'Pack'} | Qty: {item.quantity} × ₹{item.price}

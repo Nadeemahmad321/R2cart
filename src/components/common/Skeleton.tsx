@@ -281,6 +281,72 @@ export const CartScreenSkeleton = () => (
   </View>
 );
 
+export const DeliveryOrderCardSkeleton = () => (
+  <View style={styles.deliveryOrderCardSkeleton}>
+    {/* Top Row: Order # + Badge */}
+    <View style={styles.deliveryOrderTopSkeleton}>
+      <View style={{ flex: 1, marginRight: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Skeleton width={110} height={16} borderRadius={4} />
+          <Skeleton width={50} height={16} borderRadius={4} style={{ marginLeft: 8 }} />
+        </View>
+        <Skeleton width={140} height={12} borderRadius={4} style={{ marginTop: 6 }} />
+      </View>
+      <Skeleton width={80} height={22} borderRadius={6} />
+    </View>
+
+    {/* Meta Row: delivery type & status */}
+    <View style={styles.deliveryOrderMetaSkeleton}>
+      <Skeleton width={120} height={12} borderRadius={4} />
+      <Skeleton width={70} height={18} borderRadius={4} />
+    </View>
+
+    {/* Address Box */}
+    <View style={styles.deliveryAddressBoxSkeleton}>
+      <Skeleton width={16} height={16} borderRadius={8} style={{ marginRight: 8, marginTop: 2 }} />
+      <View style={{ flex: 1, gap: 5 }}>
+        <Skeleton width="92%" height={11} borderRadius={3} />
+        <Skeleton width="60%" height={11} borderRadius={3} />
+      </View>
+    </View>
+
+    {/* Action Buttons Row */}
+    <View style={styles.deliveryOrderActionsSkeleton}>
+      <Skeleton width="38%" height={38} borderRadius={8} />
+      <Skeleton width="58%" height={38} borderRadius={8} />
+    </View>
+  </View>
+);
+
+export const DeliveryCodBoxSkeleton = () => (
+  <View style={styles.deliveryCodBoxSkeleton}>
+    <View style={{ flex: 1 }}>
+      <Skeleton width={120} height={12} borderRadius={4} />
+      <Skeleton width={90} height={24} borderRadius={5} style={{ marginVertical: 6 }} />
+      <Skeleton width={160} height={12} borderRadius={4} />
+    </View>
+    <Skeleton width={85} height={26} borderRadius={13} />
+  </View>
+);
+
+export const DeliveryDashboardSkeleton = () => (
+  <View style={styles.deliveryDashboardSkeletonContainer}>
+    {/* COD Box */}
+    <DeliveryCodBoxSkeleton />
+
+    {/* Tabs Row */}
+    <View style={styles.deliveryTabsSkeleton}>
+      <Skeleton width={105} height={32} borderRadius={16} style={{ marginRight: 8 }} />
+      <Skeleton width={90} height={32} borderRadius={16} />
+    </View>
+
+    {/* 3 Delivery Order Skeletons */}
+    <DeliveryOrderCardSkeleton />
+    <DeliveryOrderCardSkeleton />
+    <DeliveryOrderCardSkeleton />
+  </View>
+);
+
 const styles = StyleSheet.create({
   skeleton: {
     backgroundColor: '#E2E8F0',
@@ -454,5 +520,60 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  deliveryOrderCardSkeleton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 13,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  deliveryOrderTopSkeleton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  deliveryOrderMetaSkeleton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  deliveryAddressBoxSkeleton: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 9,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  deliveryOrderActionsSkeleton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deliveryCodBoxSkeleton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 13,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  deliveryTabsSkeleton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  deliveryDashboardSkeletonContainer: {
+    flex: 1,
   },
 });

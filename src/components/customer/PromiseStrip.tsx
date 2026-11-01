@@ -2,16 +2,26 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
+import { dataCache } from '../../services/dataCache';
+import { useLanguage } from '../../context/LanguageContext';
 
 export const PromiseStrip: React.FC = React.memo(() => {
+  const { lang, tEta } = useLanguage();
+  const backendEta = dataCache.getEstimatedDelivery('20-30 mins');
+  const deliveryHeading = lang === 'hi'
+    ? `${tEta(backendEta)} डिलीवरी`
+    : `${backendEta.replace(/minutes/gi, 'Mins').replace(/mins/gi, 'Mins')} Delivery`;
+
   return (
     <View style={styles.container}>
       <View style={styles.cell}>
         <View style={styles.iconCircle}>
           <Feather name="clock" size={15} color={Colors.primaryDark} />
         </View>
-        <Text style={styles.heading}>15 Mins Delivery</Text>
-        <Text style={styles.subtext}>Super fast at your door</Text>
+        <Text style={styles.heading}>{deliveryHeading}</Text>
+        <Text style={styles.subtext}>
+          {lang === 'hi' ? 'सीधे आपके द्वार पर' : 'Super fast at your door'}
+        </Text>
       </View>
 
       <View style={styles.divider} />

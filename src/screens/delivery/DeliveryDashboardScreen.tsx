@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   Modal,
   ActivityIndicator,
@@ -11,12 +12,21 @@ import {
   Alert,
   Linking,
   StatusBar,
+  AppState,
+  Vibration,
+  DeviceEventEmitter,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { api } from '../../services/api';
+import { notificationService } from '../../services/notificationService';
+import { DeliveryDashboardSkeleton } from '../../components/common/Skeleton';
+import { DeliveryProofModal } from '../../components/delivery/DeliveryProofModal';
+import { getDeliveryActions, getDeliveryStatusMeta, DeliveryAction } from '../../services/deliveryWorkflow';
 
 export type DutyStatus = 'ON_DUTY' | 'ON_BREAK' | 'OFF_DUTY';
 
@@ -61,6 +71,7 @@ const DUTY_OPTIONS: Array<{
 export const DeliveryDashboardScreen = ({ navigation }: any) => {
   const insets = useSafeAreaInsets();
   const { user, logout, refreshProfile } = useAuth();
+  const { showToast, showNotification } = useToast();
 
   const [orders, setOrders] = useState<any[]>([]);
   const [codSummary, setCodSummary] = useState<any>(null);
@@ -71,9 +82,39 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [togglingDuty, setTogglingDuty] = useState<boolean>(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [proofModalOrder, setProofModalOrder] = useState<any>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
+  const [logoutModalVisible, setLogoutModalVisible] = useState<boolean>(false);
 
-  // Fetch complete live data from backend
-  const fetchData = useCallback(async () => {
+  // Calculate active assigned deliveries
+  const activeDeliveriesCount = useMemo(() => {
+    return orders.filter((o: any) => {
+      const st = o.status || o.deliveryStatus;
+      return st !== 'DELIVERED' && st !== 'DELIVERY_FAILED' && st !== 'CANCELLED';
+    }).length;
+  }, [orders]);
+
+  // Auto-redirect if auth session ends or rider logs out
+  useEffect(() => {
+    if (!user && !isLoggingOut) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'CustomerLogin' }],
+      });
+    }
+  }, [user, isLoggingOut, navigation]);
+
+  // Track known order IDs to detect newly assigned deliveries during silent background refreshes
+  const knownOrderIdsRef = useRef<Set<string>>(new Set());
+  const isInitialMountRef = useRef<boolean>(true);
+
+  // Fetch complete live data from backend (supports silent background sync)
+  const fetchData = useCallback(async (silent = false) => {
+    if (!user) return;
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const [ordersRes, codRes, profileRes] = await Promise.allSettled([
         api.getMyDeliveries(),
@@ -83,7 +124,58 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
 
       if (ordersRes.status === 'fulfilled' && ordersRes.value?.data) {
         const raw = ordersRes.value.data;
-        setOrders(Array.isArray(raw) ? raw : []);
+        const newOrders = Array.isArray(raw) ? raw : [];
+
+        // Check for newly assigned deliveries in the background
+        if (!isInitialMountRef.current) {
+          const newlyAssigned = newOrders.filter((o: any) => {
+            const id = String(o.assignmentId || o.orderId || o.id);
+            const isKnown = knownOrderIdsRef.current.has(id);
+            const isActive = o.status !== 'DELIVERED' && o.status !== 'DELIVERY_FAILED' && o.status !== 'CANCELLED';
+            return !isKnown && isActive;
+          });
+
+          if (newlyAssigned.length > 0) {
+            try {
+              Vibration.vibrate([0, 450, 150, 450]);
+            } catch {}
+
+            const first = newlyAssigned[0];
+            const targetId = first.orderId || first.id || first.assignmentId;
+            const orderNum = first.orderNumber || (targetId ? String(targetId).slice(-6).toUpperCase() : '');
+            const areaName = first.address?.area || first.address?.villageName || first.area || 'Hathua';
+            const amount = first.total ?? first.grandTotal ?? first.totalAmount;
+
+            showNotification({
+              title: newlyAssigned.length === 1 ? `🚨 New Order Assigned: #${orderNum}` : `🚨 ${newlyAssigned.length} New Orders Assigned!`,
+              body: `Delivery in ${areaName} • ${amount ? `₹${amount}` : 'Fresh Grocery'}. Tap to deliver!`,
+              type: 'rider',
+              data: {
+                screen: 'DeliveryOrderDetail',
+                orderId: targetId,
+                orderNumber: orderNum,
+                role: 'DELIVERY',
+              },
+              onPress: () => {
+                navigation.navigate('DeliveryOrderDetail', {
+                  orderId: targetId,
+                  orderNumber: orderNum,
+                });
+              },
+            });
+          }
+        }
+
+        // Cache all current delivery IDs
+        const nextIds = new Set<string>();
+        newOrders.forEach((o: any) => {
+          const id = String(o.assignmentId || o.orderId || o.id);
+          nextIds.add(id);
+        });
+        knownOrderIdsRef.current = nextIds;
+        isInitialMountRef.current = false;
+
+        setOrders(newOrders);
       }
       if (codRes.status === 'fulfilled' && codRes.value?.data) {
         setCodSummary(codRes.value.data);
@@ -99,15 +191,61 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [showToast]);
 
+  // Initial fetch on mount
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  // Screen Focus Effect: Silently refresh when returning from another screen
+  useFocusEffect(
+    useCallback(() => {
+      fetchData(true);
+    }, [fetchData])
+  );
+
+  // Periodic Polling: When ON_DUTY, auto-refresh every 8s in background so new orders appear immediately
+  useEffect(() => {
+    const pollInterval = dutyStatus === 'ON_DUTY' ? 8000 : 25000;
+    const timer = setInterval(() => {
+      fetchData(true);
+    }, pollInterval);
+
+    return () => clearInterval(timer);
+  }, [dutyStatus, fetchData]);
+
+  // AppState Listener: Auto-refresh when app transitions from background to active
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        fetchData(true);
+      }
+    });
+    return () => sub.remove();
+  }, [fetchData]);
+
+  // Global Device Event Listener for push notifications / order assignment events
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('RIDER_REFRESH_ORDERS', () => {
+      fetchData(true);
+    });
+    return () => sub.remove();
+  }, [fetchData]);
+
+  // FCM Foreground Notification Listener
+  useEffect(() => {
+    const unsub = notificationService.listenForeground(() => {
+      fetchData(true);
+    });
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
+  }, [fetchData]);
+
   const onRefresh = () => {
     setRefreshing(true);
-    fetchData();
+    fetchData(true);
   };
 
   const handleSelectDutyStatus = async (newStatus: DutyStatus) => {
@@ -119,6 +257,8 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
       await api.updateDutyStatus(newStatus);
       setDutyStatus(newStatus);
       await refreshProfile();
+      // Silently refresh live deliveries right after duty update
+      fetchData(true);
     } catch (err: any) {
       Alert.alert('Status Update Failed', err.message || 'Could not update duty status');
     } finally {
@@ -127,20 +267,60 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
   };
 
   const handleLogoutPress = () => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out of Rider Portal?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Log Out',
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-          },
-        },
-      ]
-    );
+    setLogoutModalVisible(true);
+  };
+
+  const handleConfirmLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      // 1. If currently ON_DUTY, attempt to go OFF_DUTY so rider isn't assigned new orders
+      if (dutyStatus === 'ON_DUTY') {
+        await api.updateDutyStatus('OFF_DUTY').catch(() => {});
+      }
+      // 2. Clear credentials, tokens & FCM registration
+      await logout();
+      setLogoutModalVisible(false);
+      // 3. Reset navigation directly to default CustomerLogin
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'CustomerLogin' }],
+      });
+    } catch (err: any) {
+      console.log('[Rider Logout Error]', err?.message);
+      setLogoutModalVisible(false);
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'CustomerLogin' }],
+      });
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  // Quick Action Handler directly from Dashboard card
+  const handleQuickAction = async (targetAssignmentId: string, orderNum: string, action: DeliveryAction, item?: any) => {
+    if (action.actionKey === 'COMPLETE_DELIVERY') {
+      setProofModalOrder(item);
+      return;
+    }
+    if (!action.nextStatus) {
+      navigation.navigate('DeliveryOrderDetail', { orderId: targetAssignmentId });
+      return;
+    }
+
+    setActionLoadingId(targetAssignmentId);
+    try {
+      await api.updateDeliveryStatus(targetAssignmentId, action.nextStatus);
+      try {
+        Vibration.vibrate(200);
+      } catch {}
+      showToast(`🚀 Order #${orderNum}: ${action.label} Successful!`, 'success', 'top');
+      await fetchData(true);
+    } catch (err: any) {
+      Alert.alert('Action Failed', err.message || 'Could not update status');
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
   // Filtered orders (Active vs All)
@@ -173,8 +353,8 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
 
   const renderDeliveryOrder = ({ item }: { item: any }) => {
     const isCod = item.paymentMethod === 'COD';
-    const targetOrderId = item.orderId || item.id || item.assignmentId;
-    const orderNum = item.orderNumber || (targetOrderId ? String(targetOrderId).slice(-6).toUpperCase() : '');
+    const assignmentId = item.assignmentId || item.id || item.orderId;
+    const orderNum = item.orderNumber || (assignmentId ? String(assignmentId).slice(-6).toUpperCase() : '');
 
     // Full real address from backend
     const addressStr =
@@ -194,8 +374,11 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
     const totalAmount = item.grandTotal ?? item.codAmountToCollect ?? item.totalAmount ?? 0;
     const itemsCount = item.itemCount || item.items?.length || 1;
     const isScheduled = Boolean(item.deliverySlot || item.deliveryType === 'SCHEDULED');
-    const isDelivered = item.status === 'DELIVERED';
-    const isOutForDelivery = item.status === 'OUT_FOR_DELIVERY';
+
+    // Dynamic status meta and actions resolved from backend
+    const statusMeta = getDeliveryStatusMeta(item.status);
+    const { primaryAction, isTerminal } = getDeliveryActions(item);
+    const isActionLoading = actionLoadingId === assignmentId;
 
     return (
       <View style={styles.orderCard}>
@@ -230,9 +413,9 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
             </Text>
           </View>
 
-          <View style={[styles.statusPill, isDelivered ? styles.statusPillDelivered : isOutForDelivery ? styles.statusPillOut : styles.statusPillAssigned]}>
-            <Text style={[styles.statusPillText, isDelivered ? styles.statusTextDelivered : isOutForDelivery ? styles.statusTextOut : styles.statusTextAssigned]} numberOfLines={1}>
-              {item.status ? item.status.replace(/_/g, ' ') : 'ASSIGNED'}
+          <View style={[styles.statusPill, { backgroundColor: statusMeta.badgeBg, borderColor: statusMeta.badgeBorder }]}>
+            <Text style={[styles.statusPillText, { color: statusMeta.badgeText }]} numberOfLines={1}>
+              {statusMeta.label}
             </Text>
           </View>
         </View>
@@ -245,14 +428,14 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
           </Text>
         </View>
 
-        {/* Action Buttons Row: Call removed, uniform Chat + Deliver */}
+        {/* Action Buttons Row */}
         <View style={styles.orderActions}>
           <TouchableOpacity
             style={styles.chatBtn}
             activeOpacity={0.75}
             onPress={() =>
               navigation.navigate('DeliveryChat', {
-                orderId: targetOrderId,
+                orderId: assignmentId,
                 orderNumber: orderNum,
               })
             }
@@ -261,20 +444,47 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
             <Text style={styles.chatBtnText}>Chat</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.deliverBtn}
-            activeOpacity={0.85}
-            onPress={() =>
-              navigation.navigate('DeliveryOrderDetail', {
-                orderId: targetOrderId,
-              })
-            }
-          >
-            <Text style={styles.deliverBtnText}>
-              {isDelivered ? 'View Details' : 'Deliver Order'}
-            </Text>
-            <Feather name="arrow-right" size={13} color="#FFFFFF" style={{ marginLeft: 5 }} />
-          </TouchableOpacity>
+          {primaryAction && !isTerminal ? (
+            <TouchableOpacity
+              style={[
+                styles.deliverBtn,
+                primaryAction.color ? { backgroundColor: primaryAction.color } : null,
+                isActionLoading && styles.btnDisabled,
+              ]}
+              activeOpacity={0.85}
+              disabled={isActionLoading}
+              onPress={() => handleQuickAction(assignmentId, orderNum, primaryAction, item)}
+            >
+              {isActionLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Feather
+                    name={primaryAction.icon as any}
+                    size={13}
+                    color="#FFFFFF"
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={styles.deliverBtnText}>{primaryAction.label}</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.deliverBtn}
+              activeOpacity={0.85}
+              onPress={() =>
+                navigation.navigate('DeliveryOrderDetail', {
+                  orderId: assignmentId,
+                })
+              }
+            >
+              <Text style={styles.deliverBtnText}>
+                {isTerminal ? 'View Details' : 'Deliver Order'}
+              </Text>
+              <Feather name="arrow-right" size={13} color="#FFFFFF" style={{ marginLeft: 5 }} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -330,71 +540,84 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
           <TouchableOpacity
             style={styles.logoutBtn}
             onPress={handleLogoutPress}
+            disabled={isLoggingOut}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Feather name="log-out" size={16} color="#64748B" />
+            {isLoggingOut ? (
+              <ActivityIndicator size="small" color="#DC2626" />
+            ) : (
+              <Feather name="log-out" size={16} color="#64748B" />
+            )}
           </TouchableOpacity>
         </View>
       </View>
 
-      <FlatList
-        data={filteredOrders}
-        renderItem={renderDeliveryOrder}
-        keyExtractor={(item) => String(item.assignmentId || item.orderId || item.id || Math.random())}
-        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 20 }]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
-        ListHeaderComponent={
-          <>
-            {/* Cash in Hand & Today Performance (Flat Clean Box) */}
-            <TouchableOpacity
-              style={styles.codBox}
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate('DeliveryCod')}
-            >
-              <View style={styles.codLeft}>
-                <Text style={styles.codTitle}>Today Cash In Hand</Text>
-                <Text style={styles.codAmount}>₹{cashInHand}</Text>
-                <View style={styles.deliveredCountRow}>
-                  <Feather name="check-circle" size={12} color="#059669" style={{ marginRight: 4 }} />
-                  <Text style={styles.codSub}>
-                    {todayDelivered} deliveries completed today
-                  </Text>
+      {loading ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 20 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <DeliveryDashboardSkeleton />
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={filteredOrders}
+          renderItem={renderDeliveryOrder}
+          keyExtractor={(item) => String(item.assignmentId || item.orderId || item.id || Math.random())}
+          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 20 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
+          ListHeaderComponent={
+            <>
+              {/* Cash in Hand & Today Performance (Flat Clean Box) */}
+              <TouchableOpacity
+                style={styles.codBox}
+                activeOpacity={0.88}
+                onPress={() => navigation.navigate('DeliveryCod')}
+              >
+                <View style={styles.codLeft}>
+                  <Text style={styles.codTitle}>Today Cash In Hand</Text>
+                  <Text style={styles.codAmount}>₹{cashInHand}</Text>
+                  <View style={styles.deliveredCountRow}>
+                    <Feather name="check-circle" size={12} color="#059669" style={{ marginRight: 4 }} />
+                    <Text style={styles.codSub}>
+                      {todayDelivered} deliveries completed today
+                    </Text>
+                  </View>
                 </View>
-              </View>
 
-              <View style={styles.codRightPill}>
-                <Text style={styles.codRightText}>COD Details</Text>
-                <Feather name="chevron-right" size={12} color={Colors.primary} />
-              </View>
-            </TouchableOpacity>
-
-            {/* Filter Tabs for Deliveries: All Orders first, then Active */}
-            <View style={styles.tabsRow}>
-              <TouchableOpacity
-                style={[styles.tabCapsule, activeTab === 'ALL' && styles.tabCapsuleActive]}
-                onPress={() => setActiveTab('ALL')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.tabText, activeTab === 'ALL' && styles.tabTextActive]}>
-                  All Orders ({orders.length})
-                </Text>
+                <View style={styles.codRightPill}>
+                  <Text style={styles.codRightText}>COD Details</Text>
+                  <Feather name="chevron-right" size={12} color={Colors.primary} />
+                </View>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.tabCapsule, activeTab === 'ACTIVE' && styles.tabCapsuleActive]}
-                onPress={() => setActiveTab('ACTIVE')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.tabText, activeTab === 'ACTIVE' && styles.tabTextActive]}>
-                  Active ({activeCount})
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        }
-        ListEmptyComponent={
-          !loading ? (
+              {/* Filter Tabs for Deliveries: All Orders first, then Active */}
+              <View style={styles.tabsRow}>
+                <TouchableOpacity
+                  style={[styles.tabCapsule, activeTab === 'ALL' && styles.tabCapsuleActive]}
+                  onPress={() => setActiveTab('ALL')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.tabText, activeTab === 'ALL' && styles.tabTextActive]}>
+                    All Orders ({orders.length})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.tabCapsule, activeTab === 'ACTIVE' && styles.tabCapsuleActive]}
+                  onPress={() => setActiveTab('ACTIVE')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.tabText, activeTab === 'ACTIVE' && styles.tabTextActive]}>
+                    Active ({activeCount})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          }
+          ListEmptyComponent={
             <View style={styles.emptyBox}>
               <View style={styles.emptyIconCircle}>
                 <Feather name="package" size={24} color={Colors.primary} />
@@ -410,11 +633,9 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
                   : 'You are currently OFF DUTY. Switch to ON DUTY above to start receiving deliveries.'}
               </Text>
             </View>
-          ) : (
-            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
-          )
-        }
-      />
+          }
+        />
+      )}
 
       {/* Duty Status Selection Modal (3 Options fetched & synced with backend) */}
       <Modal
@@ -471,6 +692,132 @@ export const DeliveryDashboardScreen = ({ navigation }: any) => {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Sleek Custom Rider Logout Confirmation Sheet */}
+      <Modal
+        visible={logoutModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isLoggingOut) setLogoutModalVisible(false);
+        }}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            if (!isLoggingOut) setLogoutModalVisible(false);
+          }}
+        >
+          <View style={styles.logoutSheet} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHandle} />
+
+            {/* Logout Icon Avatar Ring */}
+            <View style={styles.logoutIconHero}>
+              <View style={styles.logoutIconRing}>
+                <Feather name="log-out" size={26} color="#DC2626" />
+              </View>
+            </View>
+
+            {/* Title & Subtitle */}
+            <Text style={styles.logoutSheetTitle}>Log Out of Rider Portal?</Text>
+            <Text style={styles.logoutSheetSub}>
+              Are you sure you want to end your shift? You won't receive new order alerts while logged out.
+            </Text>
+
+            {/* Rider Identity Card */}
+            <View style={styles.logoutRiderCard}>
+              <View style={styles.logoutAvatarWrap}>
+                <Text style={styles.logoutAvatarInitials}>
+                  {(user?.name || 'R').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.logoutRiderName} numberOfLines={1}>
+                  {user?.name || 'Delivery Partner'}
+                </Text>
+                <Text style={styles.logoutRiderPhone}>
+                  {user?.deliveryStaffId ? `ID: ${user.deliveryStaffId}` : (user?.mobile || user?.email || 'Rider Account')}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.logoutDutyBadge,
+                  { backgroundColor: currentDutyConfig.badgeBg, borderColor: currentDutyConfig.badgeBorder },
+                ]}
+              >
+                <View style={[styles.logoutDutyDot, { backgroundColor: currentDutyConfig.dotColor }]} />
+                <Text style={[styles.logoutDutyText, { color: currentDutyConfig.badgeText }]}>
+                  {currentDutyConfig.label}
+                </Text>
+              </View>
+            </View>
+
+            {/* Active Deliveries Alert or Safe Duty Notice */}
+            {activeDeliveriesCount > 0 ? (
+              <View style={styles.activeOrdersWarning}>
+                <Feather name="alert-triangle" size={17} color="#D97706" style={{ marginTop: 2, marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.warningTitle}>
+                    {activeDeliveriesCount} Active Delivery in Progress
+                  </Text>
+                  <Text style={styles.warningSub}>
+                    You have active orders assigned. Please deliver or update status before ending your shift.
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.offDutyNotice}>
+                <Feather name="shield" size={16} color="#059669" style={{ marginRight: 8 }} />
+                <Text style={styles.offDutyNoticeText}>
+                  Your duty status will safely change to Off-Duty automatically.
+                </Text>
+              </View>
+            )}
+
+            {/* Modal Actions */}
+            <View style={styles.logoutActionsRow}>
+              <TouchableOpacity
+                style={styles.cancelLogoutBtn}
+                onPress={() => setLogoutModalVisible(false)}
+                disabled={isLoggingOut}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.cancelLogoutText}>Stay Logged In</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.confirmLogoutBtn, isLoggingOut && styles.confirmLogoutBtnDisabled]}
+                onPress={handleConfirmLogout}
+                disabled={isLoggingOut}
+                activeOpacity={0.85}
+              >
+                {isLoggingOut ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Feather name="log-out" size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.confirmLogoutText}>Yes, Log Out</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Mandatory Cloudinary Photo Proof & COD Delivery Modal */}
+      {proofModalOrder && (
+        <DeliveryProofModal
+          visible={Boolean(proofModalOrder)}
+          order={proofModalOrder}
+          onClose={() => setProofModalOrder(null)}
+          onSuccess={() => {
+            showToast('🎉 Delivery Complete & Verified!', 'success', 'top');
+            fetchData(true);
+          }}
+        />
+      )}
     </View>
   );
 };
@@ -618,6 +965,179 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#475569',
+  },
+  // Custom Rider Logout Confirmation Sheet Styles
+  logoutSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    paddingBottom: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  logoutIconHero: {
+    alignItems: 'center',
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  logoutIconRing: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 2,
+    borderColor: '#FECACA',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoutSheetTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  logoutSheetSub: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  logoutRiderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 14,
+  },
+  logoutAvatarWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#0F172A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoutAvatarInitials: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  logoutRiderName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  logoutRiderPhone: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  logoutDutyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  logoutDutyDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  logoutDutyText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  activeOrdersWarning: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 18,
+  },
+  warningTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  warningSub: {
+    fontSize: 11,
+    color: '#92400E',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  offDutyNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 18,
+  },
+  offDutyNoticeText: {
+    fontSize: 12,
+    color: '#065F46',
+    fontWeight: '600',
+  },
+  logoutActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cancelLogoutBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelLogoutText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  confirmLogoutBtn: {
+    flex: 1.2,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  confirmLogoutBtnDisabled: {
+    opacity: 0.7,
+  },
+  confirmLogoutText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   logoutBtn: {
     width: 32,
@@ -880,6 +1400,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  btnDisabled: {
+    opacity: 0.65,
   },
   emptyBox: {
     padding: 24,

@@ -33,6 +33,7 @@ export interface Product {
   categorySlug?: string;
   categoryName?: string;
   variants?: ProductVariant[];
+  variantGroupId?: string;
   price?: number;
   mrp?: number;
   costPrice?: number;
@@ -44,6 +45,11 @@ export interface Product {
   status?: string;
   rating?: number | null;
   ratingCount?: number;
+  deliveryScope?: 'LOCAL' | 'PAN_INDIA' | 'CUSTOM' | string;
+  deliveryLocations?: string[] | string;
+  shippingFee?: number;
+  orderMode?: 'DIRECT_ORDER' | 'CONTACT_REQUEST' | 'BOTH' | string;
+  estimatedDelivery?: string;
 }
 
 export interface Category {
@@ -55,6 +61,11 @@ export interface Category {
   color?: string;
   position?: number;
   status?: string;
+  badgeActive?: boolean;
+  badgeText?: string;
+  noticeActive?: boolean;
+  noticeTitle?: string;
+  noticeMessage?: string;
 }
 
 export interface Banner {
@@ -82,6 +93,14 @@ export interface CartItem {
   mrp?: number;
   imageUrl?: string;
   quantity: number;
+  stock?: number;
+  status?: string;
+  isSoon?: boolean;
+  comingSoon?: boolean;
+  categorySlug?: string;
+  deliveryScope?: 'LOCAL' | 'PAN_INDIA' | 'CUSTOM' | string;
+  orderMode?: 'DIRECT_ORDER' | 'CONTACT_REQUEST' | 'BOTH' | string;
+  shippingFee?: number;
 }
 
 export interface Address {

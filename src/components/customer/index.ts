@@ -7,3 +7,4 @@ export { PromoStrip } from './PromoStrip';
 export { PromiseStrip } from './PromiseStrip';
 export { FloatingCartBar } from './FloatingCartBar';
 export { OrderCancelledModal } from './OrderCancelledModal';
+export { ProductEnquiryModal } from './ProductEnquiryModal';

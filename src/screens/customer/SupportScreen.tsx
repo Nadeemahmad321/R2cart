@@ -313,9 +313,9 @@ export const SupportScreen = ({ route, navigation }: any) => {
 
   const handleSubmit = async () => {
     if (!user) {
-      Alert.alert(
-        isHindi ? 'साइन इन आवश्यक है' : 'Sign In Required',
-        isHindi ? 'सपोर्ट टिकट दर्ज करने के लिए कृपया साइन इन करें।' : 'Please sign in to raise a support ticket.'
+      notify(
+        isHindi ? 'सपोर्ट टिकट दर्ज करने के लिए कृपया साइन इन करें।' : 'Please sign in to raise a support ticket.',
+        'error'
       );
       return;
     }
@@ -325,25 +325,27 @@ export const SupportScreen = ({ route, navigation }: any) => {
     const cleanMobile = (mobile || user?.mobile || '').replace(/\D/g, '');
 
     if (!issueType) {
-      Alert.alert(
-        isHindi ? 'समस्या का प्रकार चुनें' : 'Issue Type Required',
-        isHindi ? 'कृपया समस्या का प्रकार चुनें।' : 'Please select an issue type.'
+      notify(
+        isHindi ? 'कृपया समस्या का प्रकार चुनें।' : 'Please select an issue type.',
+        'error'
       );
       return;
     }
 
     if (trimmedSubject.length < 4) {
-      Alert.alert(
-        isHindi ? 'विषय आवश्यक है' : 'Subject Required',
-        isHindi ? 'कृपया कम से कम 4 अक्षरों का विषय लिखें।' : 'Please briefly describe the issue (minimum 4 characters).'
+      notify(
+        isHindi ? 'कृपया कम से कम 4 अक्षरों का विषय लिखें।' : 'Please briefly describe the issue (minimum 4 characters).',
+        'error'
       );
       return;
     }
 
     if (trimmedDesc.length < 10) {
-      Alert.alert(
-        isHindi ? 'विवरण आवश्यक है' : 'Description Required',
-        isHindi ? 'कृपया कम से कम 10 अक्षरों का विवरण साझा करें ताकि हम तेजी से मदद कर सकें।' : 'Please share details so we can help faster (minimum 10 characters).'
+      notify(
+        isHindi
+          ? 'कृपया विवरण में कम से कम 10 अक्षर लिखें।'
+          : 'Please enter at least 10 characters in description.',
+        'error'
       );
       return;
     }
@@ -942,9 +944,14 @@ export const SupportScreen = ({ route, navigation }: any) => {
 
                 {/* 5. Description */}
                 <View style={styles.formGroup}>
-                  <Text style={styles.formLabel}>
-                    {isHindi ? 'विवरण' : 'Description'}
-                  </Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={[styles.formLabel, { marginBottom: 0 }]}>
+                      {isHindi ? 'विवरण' : 'Description'}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: description.trim().length >= 10 ? '#059669' : '#94A3B8', fontWeight: '600' }}>
+                      {description.trim().length}/10 {isHindi ? 'अक्षर' : 'min'}
+                    </Text>
+                  </View>
                   <View style={[styles.formInputBox, styles.formTextareaBox, focusedField === 'desc' && styles.formInputBoxFocused]}>
                     <TextInput
                       style={[styles.formInput, styles.formTextarea]}
@@ -957,7 +964,7 @@ export const SupportScreen = ({ route, navigation }: any) => {
                         }, 120);
                       }}
                       onBlur={() => setFocusedField(null)}
-                      placeholder={isHindi ? 'विवरण साझा करें ताकि हम तेजी से मदद कर सकें' : 'Share details so we can help faster'}
+                      placeholder={isHindi ? 'कम से कम 10 अक्षरों का विवरण साझा करें...' : 'Share details (minimum 10 characters)...'}
                       placeholderTextColor="#9CA3AF"
                       multiline={true}
                       scrollEnabled={false}

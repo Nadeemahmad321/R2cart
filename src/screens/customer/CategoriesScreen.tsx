@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
 import { useCart } from '../../context/CartContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { api } from '../../services/api';
 import { dataCache } from '../../services/dataCache';
 import { Category, Product } from '../../types';
@@ -33,45 +34,57 @@ interface CategoryRailItemProps {
 
 const CategoryRailItem = React.memo<CategoryRailItemProps>(
   ({ item, isSelected, onSelect }) => {
+    const { t, tCat } = useLanguage();
+    const isSoon = dataCache.isCategoryComingSoon(item.slug);
+    const imgUri = item.image || item.imageUrl;
+
     return (
       <TouchableOpacity
         style={[styles.catRailItem, isSelected && styles.catRailItemActive]}
         onPress={() => onSelect(item)}
         activeOpacity={0.7}
       >
-        <View style={[styles.catIconWrap, isSelected && styles.catIconWrapActive]}>
-          {item.image || item.imageUrl ? (
-            <Image
-              source={{ uri: item.image || item.imageUrl }}
-              style={styles.catRailImg}
-              resizeMode="contain"
-            />
-          ) : (
-            <Feather
-              name="grid"
-              size={18}
-              color={isSelected ? Colors.primaryDark : '#64748B'}
-            />
-          )}
+        <View style={styles.railIconContainer}>
+          <View style={[styles.catIconWrap, isSelected && styles.catIconWrapActive]}>
+            {imgUri ? (
+              <Image
+                source={{ uri: imgUri }}
+                style={styles.catRailImg}
+                resizeMode="cover"
+              />
+            ) : (
+              <Feather
+                name="grid"
+                size={22}
+                color={isSelected ? Colors.primaryDark : '#64748B'}
+              />
+            )}
+          </View>
+          {item.badgeActive && item.badgeText ? (
+            <View style={styles.railCustomBadge}>
+              <Text style={styles.railCustomBadgeText} numberOfLines={1}>{item.badgeText}</Text>
+            </View>
+          ) : isSoon ? (
+            <View style={styles.railSoonBadge}>
+              <Text style={styles.railSoonBadgeText}>{t('soonBadge', 'Soon')}</Text>
+            </View>
+          ) : null}
         </View>
         <Text
           style={[styles.catLabel, isSelected && styles.catLabelActive]}
           numberOfLines={2}
         >
-          {item.name}
+          {tCat(item.name)}
         </Text>
       </TouchableOpacity>
     );
-  },
-  (prev, next) =>
-    prev.isSelected === next.isSelected &&
-    prev.item.id === next.item.id &&
-    prev.item.name === next.item.name
+  }
 );
 
 export const CategoriesScreen = ({ navigation, route }: any) => {
   const insets = useSafeAreaInsets();
   const { addToCart, removeFromCart, getItemQuantity, totalItems } = useCart();
+  const { t, tCat, tText, prefetchTranslations } = useLanguage();
 
   // 1. Instant cache initialization (0ms frame-1 display)
   const cachedCats = dataCache.getCategories();
@@ -99,26 +112,38 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
   }, [initialTarget]);
 
   const [products, setProducts] = useState<Product[]>(initialCachedProds);
-  const [loadingProds, setLoadingProds] = useState<boolean>(
-    initialTarget ? initialCachedProds.length === 0 : false
-  );
+  const [loadingProds, setLoadingProds] = useState<boolean>(initialCachedProds.length === 0);
 
-  // Background category fetch (Stale-While-Revalidate)
+  // Background category & settings fetch (Stale-While-Revalidate)
   const refreshCategories = useCallback(async () => {
     try {
-      const res = await api.getCategories();
-      if (res.data && res.data.length > 0) {
-        setCategories(res.data);
-        dataCache.setCategories(res.data);
+      const [catRes, settingsRes, deliveryRes] = await Promise.allSettled([
+        api.getCategories(),
+        api.getSettings(),
+        api.getDelivery(),
+      ]);
+
+      if (settingsRes.status === 'fulfilled' && settingsRes.value?.data) {
+        dataCache.setSettings(settingsRes.value.data);
+      }
+      if (deliveryRes.status === 'fulfilled' && deliveryRes.value?.data) {
+        dataCache.setDeliveryData(deliveryRes.value.data);
+      }
+
+      if (catRes.status === 'fulfilled' && catRes.value?.data && catRes.value.data.length > 0) {
+        const catData = catRes.value.data;
+        setCategories(catData);
+        dataCache.setCategories(catData);
+        prefetchTranslations(catData);
 
         // If no category was selected yet, select the first or targeted one
         setSelectedCatId(prev => {
-          if (prev && res.data.some((c: Category) => c.id === prev)) return prev;
-          let target = res.data[0];
+          if (prev && catData.some((c: Category) => c.id === prev)) return prev;
+          let target = catData[0];
           if (route?.params?.categorySlug) {
-            target = res.data.find((c: Category) => c.slug === route.params.categorySlug) || target;
+            target = catData.find((c: Category) => c.slug === route.params.categorySlug) || target;
           } else if (route?.params?.categoryId) {
-            target = res.data.find((c: Category) => c.id === route.params.categoryId) || target;
+            target = catData.find((c: Category) => c.id === route.params.categoryId) || target;
           }
           return target.id;
         });
@@ -151,6 +176,7 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
         const list = Array.isArray(res.data) ? res.data : [];
         dataCache.setProductsByCategory(slug, list);
         setProducts(list);
+        prefetchTranslations(list);
       }
     } catch {
       // Graceful error fallback
@@ -177,8 +203,9 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
           // Silent background revalidation
           fetchProductsForCategory(cat.slug, true);
         } else {
-          // First time loading this category
+          // First time loading this category - show skeleton immediately!
           setProducts([]);
+          setLoadingProds(true);
           fetchProductsForCategory(cat.slug, false);
         }
       }
@@ -231,6 +258,18 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
     return categories.find(c => c.id === selectedCatId);
   }, [categories, selectedCatId]);
 
+  const isSelectedCatSoon = useMemo(() => {
+    return Boolean(selectedCat && dataCache.isCategoryComingSoon(selectedCat.slug));
+  }, [selectedCat]);
+
+  const [dismissedNoticeIds, setDismissedNoticeIds] = useState<Record<string, boolean>>({});
+
+  const hasNotice = useMemo(() => {
+    if (!selectedCat?.noticeActive) return false;
+    if (!selectedCat.noticeTitle && !selectedCat.noticeMessage) return false;
+    return !dismissedNoticeIds[selectedCat.id];
+  }, [selectedCat, dismissedNoticeIds]);
+
   const handleProductPress = useCallback(
     (productId: string) => {
       navigation.navigate('ProductDetail', { productId });
@@ -271,11 +310,23 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
       {/* Top Header with Safe Area and Cart Icon */}
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Categories</Text>
+          <Text style={styles.headerTitle}>{t('categories', 'Categories')}</Text>
           {selectedCat && (
-            <Text style={styles.headerSubtitle} numberOfLines={1}>
-              {selectedCat.name}
-            </Text>
+            <View style={styles.headerSubRow}>
+              <Text style={styles.headerSubtitle} numberOfLines={1}>
+                {tCat(selectedCat.name)}
+              </Text>
+              {selectedCat.badgeActive && selectedCat.badgeText ? (
+                <View style={styles.headerCatBadge}>
+                  <Text style={styles.headerCatBadgeText}>{selectedCat.badgeText}</Text>
+                </View>
+              ) : isSelectedCatSoon ? (
+                <View style={styles.headerSoonBadge}>
+                  <Feather name="clock" size={9} color="#B45309" />
+                  <Text style={styles.headerSoonBadgeText}>{t('soonBadge', 'Soon')}</Text>
+                </View>
+              ) : null}
+            </View>
           )}
         </View>
 
@@ -308,8 +359,8 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
           <View style={styles.leftRail}>
             {Array.from({ length: 6 }).map((_, i) => (
               <View key={i} style={{ alignItems: 'center', paddingVertical: 12 }}>
-                <Skeleton width={44} height={44} borderRadius={22} />
-                <Skeleton width={50} height={10} borderRadius={4} style={{ marginTop: 6 }} />
+                <Skeleton width={54} height={54} borderRadius={27} />
+                <Skeleton width={56} height={10} borderRadius={4} style={{ marginTop: 6 }} />
               </View>
             ))}
           </View>
@@ -336,27 +387,93 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
           </View>
 
           {/* Right Product Grid */}
-          <View style={styles.rightContent}>
-            {loadingProds && products.length === 0 ? (
+          <View style={[styles.rightContent, { padding: 10 }]}>
+            {loadingProds ? (
               <View style={{ padding: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {Array.from({ length: 4 }).map((_, i) => (
+                {Array.from({ length: 6 }).map((_, i) => (
                   <ProductCardSkeleton key={i} width={RIGHT_PROD_WIDTH} />
                 ))}
               </View>
             ) : products.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <View style={styles.emptyIconCircle}>
-                  <Feather name="package" size={32} color="#059669" />
+              <View style={{ flex: 1 }}>
+                {/* Right Header Bar */}
+                <View style={styles.rightHeaderBar}>
+                  <View style={styles.rightHeaderLeft}>
+                    <Text style={styles.rightCatTitle} numberOfLines={1}>
+                      {selectedCat ? tCat(selectedCat.name) : ''}
+                    </Text>
+                    {selectedCat?.badgeActive && selectedCat?.badgeText ? (
+                      <View style={styles.rightBadgePill}>
+                        <Text style={styles.rightBadgePillText}>{selectedCat.badgeText}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.rightCatCount}>0 items</Text>
                 </View>
-                <Text style={styles.emptyTitle}>Products coming soon</Text>
-                <Text style={styles.emptySub}>
-                  {selectedCat
-                    ? `No products have been added to ${selectedCat.name} yet.`
-                    : 'No products have been added to this category yet.'}
-                </Text>
-                <Text style={styles.emptyRestockText}>
-                  We are restocking fresh inventory shortly!
-                </Text>
+
+                {hasNotice && (
+                  <View style={styles.noticeCard}>
+                    <View style={styles.noticeIconWrap}>
+                      <Feather name="bell" size={11} color="#2563EB" />
+                    </View>
+                    <View style={styles.noticeTextCol}>
+                      {selectedCat?.noticeTitle ? (
+                        <Text style={styles.noticeTitle}>{tText(selectedCat.noticeTitle)}</Text>
+                      ) : null}
+                      {selectedCat?.noticeMessage ? (
+                        <Text style={styles.noticeMessage}>{tText(selectedCat.noticeMessage)}</Text>
+                      ) : null}
+                    </View>
+                    <TouchableOpacity
+                      style={styles.noticeDismissBtn}
+                      onPress={() => setDismissedNoticeIds(prev => ({ ...prev, [selectedCat!.id]: true }))}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Feather name="x" size={11} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                  {isSelectedCatSoon ? (
+                    <View style={styles.emptyContainer}>
+                      <View style={styles.emptyCenterContent}>
+                        <View style={[styles.emptyIconCircle, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                          <Feather name="clock" size={32} color="#D97706" />
+                        </View>
+                        <View style={styles.comingSoonPillTag}>
+                          <Feather name="clock" size={10} color="#B45309" style={{ marginRight: 4 }} />
+                          <Text style={styles.comingSoonPillTagText}>{t('comingSoon', 'COMING SOON')}</Text>
+                        </View>
+                        <Text style={styles.emptyTitle}>
+                          {selectedCat ? selectedCat.name : 'Coming Soon'}
+                        </Text>
+                        <Text style={styles.emptySub}>
+                          We are stocking up fresh products for this category. Check back shortly!
+                        </Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.emptyContainer}>
+                      <View style={styles.emptyCenterContent}>
+                        <View style={styles.emptyIconCircle}>
+                          <Feather name="package" size={32} color="#059669" />
+                        </View>
+                        <Text style={styles.emptyTitle}>No Products Available</Text>
+                        <Text style={styles.emptySub}>
+                          {selectedCat
+                            ? `Currently no products available in ${selectedCat.name}.`
+                            : 'No products available in this category.'}
+                        </Text>
+                        <View style={{ alignItems: 'center', width: '100%' }}>
+                          <Text style={styles.emptyRestockText}>
+                            We are restocking fresh inventory shortly!
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
               </View>
             ) : (
               <FlatList
@@ -369,7 +486,64 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
                 windowSize={5}
                 removeClippedSubviews={Platform.OS === 'android'}
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ padding: 10, paddingBottom: 110 + insets.bottom }}
+                ListHeaderComponent={
+                  <View style={{ marginBottom: 6 }}>
+                    {/* Right Header Bar */}
+                    <View style={styles.rightHeaderBar}>
+                      <View style={styles.rightHeaderLeft}>
+                        <Text style={styles.rightCatTitle} numberOfLines={1}>
+                          {selectedCat ? tCat(selectedCat.name) : ''}
+                        </Text>
+                        {selectedCat?.badgeActive && selectedCat?.badgeText ? (
+                          <View style={styles.rightBadgePill}>
+                            <Text style={styles.rightBadgePillText}>{selectedCat.badgeText}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text style={styles.rightCatCount}>
+                        {products.length} {products.length === 1 ? 'item' : 'items'}
+                      </Text>
+                    </View>
+
+                    {/* Revamped High-Quality Notice Card */}
+                    {hasNotice && (
+                      <View style={styles.noticeCard}>
+                        <View style={styles.noticeIconWrap}>
+                          <Feather name="bell" size={11} color="#2563EB" />
+                        </View>
+                        <View style={styles.noticeTextCol}>
+                          {selectedCat?.noticeTitle ? (
+                            <Text style={styles.noticeTitle}>{tText(selectedCat.noticeTitle)}</Text>
+                          ) : null}
+                          {selectedCat?.noticeMessage ? (
+                            <Text style={styles.noticeMessage}>{tText(selectedCat.noticeMessage)}</Text>
+                          ) : null}
+                        </View>
+                        <TouchableOpacity
+                          style={styles.noticeDismissBtn}
+                          onPress={() => setDismissedNoticeIds(prev => ({ ...prev, [selectedCat!.id]: true }))}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Feather name="x" size={11} color="#64748B" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {/* Coming Soon Banner */}
+                    {isSelectedCatSoon && (
+                      <View style={styles.catBannerCard}>
+                        <View style={styles.catBannerHeader}>
+                          <Feather name="clock" size={12} color="#D97706" />
+                          <Text style={styles.catBannerBadgeText}>{t('comingSoon', 'COMING SOON')}</Text>
+                        </View>
+                        <Text style={styles.catBannerDesc}>
+                          {t('categoryComingSoonDesc', 'We are stocking up fresh products for this category. Check back shortly!')}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                }
+                contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}
                 columnWrapperStyle={{ gap: 8 }}
               />
             )}
@@ -406,11 +580,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
   },
+  headerSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
   headerSubtitle: {
     fontSize: 12,
     color: Colors.primaryDark,
     fontWeight: '600',
-    marginTop: 1,
+    flexShrink: 1,
   },
   headerRight: {
     flexDirection: 'row',
@@ -458,7 +637,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   leftRail: {
-    width: 95,
+    width: 98,
     backgroundColor: '#F8FAFC',
     borderRightWidth: 1,
     borderRightColor: '#E2E8F0',
@@ -474,22 +653,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderLeftColor: Colors.primary,
   },
+  railIconContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
   catIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#EEF2F6',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
     overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
   },
   catIconWrapActive: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: '#ECFDF5',
+    borderColor: Colors.primary,
+    borderWidth: 2,
   },
   catRailImg: {
-    width: 34,
-    height: 34,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
   },
   catLabel: {
     fontSize: 11,
@@ -506,6 +694,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FAFAF9',
   },
+  rightContentCentered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   emptyIconCircle: {
     width: 68,
     height: 68,
@@ -516,36 +708,268 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     borderWidth: 1.5,
     borderColor: '#A7F3D0',
+    alignSelf: 'center',
   },
   emptyContainer: {
-    flex: 1,
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    paddingTop: 60,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+    alignSelf: 'center',
+  },
+  emptyCenterContent: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
     marginTop: 12,
+    textAlign: 'center',
+    alignSelf: 'center',
+    width: '100%',
   },
   emptySub: {
     fontSize: 12.5,
     color: '#64748B',
     textAlign: 'center',
+    alignSelf: 'center',
     marginTop: 6,
     lineHeight: 18,
+    width: '100%',
+    paddingHorizontal: 8,
   },
   emptyRestockText: {
     fontSize: 11.5,
     fontWeight: '600',
     color: Colors.primaryDark,
     textAlign: 'center',
-    marginTop: 8,
+    alignSelf: 'center',
+    marginTop: 10,
     backgroundColor: '#ECFDF5',
-    paddingVertical: 4,
-    paddingHorizontal: 12,
+    paddingVertical: 5,
+    paddingHorizontal: 14,
     borderRadius: 12,
+    overflow: 'hidden',
+  },
+  railSoonBadge: {
+    position: 'absolute',
+    top: -5,
+    alignSelf: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    zIndex: 10,
+    elevation: 2,
+  },
+  railSoonBadgeText: {
+    fontSize: 7.5,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  railCustomBadge: {
+    position: 'absolute',
+    top: -5,
+    alignSelf: 'center',
+    backgroundColor: '#0284C7',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    zIndex: 10,
+    elevation: 2,
+  },
+  railCustomBadgeText: {
+    fontSize: 7,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  headerCatBadge: {
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    marginLeft: 6,
+  },
+  headerCatBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#0284C7',
+  },
+  rightHeaderBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+    paddingVertical: 6,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  rightHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    paddingRight: 6,
+    gap: 6,
+  },
+  rightCatTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+    flexShrink: 1,
+  },
+  rightCatCount: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    flexShrink: 0,
+  },
+  rightBadgePill: {
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    flexShrink: 0,
+  },
+  rightBadgePillText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#0284C7',
+  },
+  noticeCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginBottom: 8,
+    alignSelf: 'stretch',
+  },
+  noticeIconWrap: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  noticeTextCol: {
+    flex: 1,
+    paddingRight: 4,
+  },
+  noticeTitle: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#1E3A8A',
+    marginBottom: 2,
+    lineHeight: 16,
+  },
+  noticeMessage: {
+    fontSize: 10.5,
+    color: '#1E40AF',
+    lineHeight: 15,
+  },
+  noticeDismissBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  headerSoonBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    marginLeft: 6,
+  },
+  headerSoonBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#B45309',
+    marginLeft: 2.5,
+  },
+  comingSoonPillTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  comingSoonPillTagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
+    letterSpacing: 0.3,
+    textAlign: 'center',
+  },
+  catBannerCard: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+    alignSelf: 'center',
+  },
+  catBannerBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
+    marginLeft: 4,
+    letterSpacing: 0.3,
+    textAlign: 'center',
+  },
+  catBannerDesc: {
+    fontSize: 11.5,
+    color: '#92400E',
+    lineHeight: 16,
+    textAlign: 'center',
+    alignSelf: 'center',
+    width: '100%',
   },
 });

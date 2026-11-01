@@ -8,3 +8,12 @@ export function navigate(name: string, params?: any) {
   }
 }
 
+export function resetRoot(name: string, params?: any) {
+  if (navigationRef.isReady()) {
+    navigationRef.reset({
+      index: 0,
+      routes: [{ name, params }],
+    });
+  }
+}
+

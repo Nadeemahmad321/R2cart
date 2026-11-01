@@ -1,11 +1,14 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Modal, ScrollView } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { Colors } from '../../theme/colors';
 import { Product } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
 import { useFavorites } from '../../context/FavoritesContext';
+import { useCart } from '../../context/CartContext';
+import { dataCache } from '../../services/dataCache';
+import { ProductEnquiryModal } from './ProductEnquiryModal';
 
 const { width } = Dimensions.get('window');
 export const PRODUCT_ITEM_WIDTH = (width - 44) / 2;
@@ -17,6 +20,10 @@ interface ProductMediaProps {
   ratingCount?: number;
   isFav?: boolean;
   onToggleFav?: () => void;
+  isOutOfStock?: boolean;
+  isComingSoon?: boolean;
+  deliveryScope?: string;
+  orderMode?: string;
 }
 
 function optimizeThumb(url?: string | null, targetWidth = 320): string {
@@ -37,19 +44,42 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
   ratingCount,
   isFav,
   onToggleFav,
+  isOutOfStock,
+  isComingSoon,
+  deliveryScope,
+  orderMode,
 }) => {
-  const { lang, t } = useLanguage();
+  const { lang, t, tEta } = useLanguage();
   const optimizedUri = useMemo(() => optimizeThumb(imgUri, 320), [imgUri]);
   const imageSource = useMemo(() => (optimizedUri ? { uri: optimizedUri } : null), [optimizedUri]);
   const hasRating = rating != null && Number(rating) > 0;
+  const isPanIndia = deliveryScope === 'PAN_INDIA';
+  const isContactOnly = orderMode === 'CONTACT_REQUEST';
+  const showInstantEta = !isContactOnly && !isPanIndia && deliveryScope !== 'CUSTOM';
+  const backendEta = dataCache.getEstimatedDelivery('20-30 mins');
+  const displayEta = lang === 'hi'
+    ? tEta(backendEta)
+    : backendEta.replace(/minutes/gi, 'MINS').replace(/mins/gi, 'MINS').toUpperCase();
 
   return (
     <View style={styles.imageBackdrop}>
-      {discount > 0 && (
+      {discount > 0 && !isOutOfStock && !isComingSoon && (
         <View style={styles.discountPill}>
           <Text style={styles.discountPillText}>{discount}% {t('off')}</Text>
         </View>
       )}
+
+      {/* Out of Stock / Coming Soon Badge on Media */}
+      {isComingSoon ? (
+        <View style={styles.soonMediaOverlay}>
+          <Feather name="clock" size={9.5} color="#B45309" />
+          <Text style={styles.soonMediaOverlayText}>{t('comingSoon', 'COMING SOON')}</Text>
+        </View>
+      ) : isOutOfStock ? (
+        <View style={styles.outOfStockMediaOverlay}>
+          <Text style={styles.outOfStockMediaOverlayText}>{t('outOfStock', 'OUT OF STOCK')}</Text>
+        </View>
+      ) : null}
 
       {/* Top-Right Heart / Favorite Button */}
       <TouchableOpacity
@@ -66,19 +96,32 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
       </TouchableOpacity>
 
       {imageSource ? (
-        <Image source={imageSource} style={styles.productImg} resizeMode="cover" />
+        <Image
+          source={imageSource}
+          style={[styles.productImg, (isOutOfStock || isComingSoon) && styles.productImgDimmed]}
+          resizeMode="cover"
+        />
       ) : (
         <View style={styles.placeholderWrap}>
           <Feather name="shopping-bag" size={26} color="#94A3B8" />
         </View>
       )}
 
-      {/* Bottom Badge Row: Delivery ETA on Left, Backend Rating on Right (matching website) */}
+      {/* Bottom Badge Row: Delivery ETA on Left, Backend Rating on Right */}
       <View style={styles.badgeRow}>
-        <View style={styles.deliveryPill}>
-          <Feather name="zap" size={8.5} color="#059669" />
-          <Text style={styles.deliveryPillText}>{lang === 'hi' ? '15 मिनट' : '15 MINS'}</Text>
-        </View>
+        {showInstantEta ? (
+          <View style={styles.deliveryPill}>
+            <Feather name="zap" size={8.5} color="#059669" />
+            <Text style={styles.deliveryPillText}>{displayEta}</Text>
+          </View>
+        ) : isPanIndia ? (
+          <View style={styles.panIndiaPill}>
+            <Feather name="truck" size={8.5} color="#6D28D9" />
+            <Text style={styles.panIndiaPillText}>PAN-INDIA</Text>
+          </View>
+        ) : (
+          <View />
+        )}
 
         {hasRating && (
           <View style={styles.ratingBadge}>
@@ -113,10 +156,36 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
 }) => {
   if (!product || !product.id) return null;
 
-  const { t, tProd } = useLanguage();
+  const { t, tProd, lang } = useLanguage();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const { getItemQuantity: getCartItemQty, addToCart: cartAdd, removeFromCart: cartRemove } = useCart();
+  const [packModalOpen, setPackModalOpen] = useState(false);
+  const [enquiryModalOpen, setEnquiryModalOpen] = useState(false);
+
+  const orderMode = product.orderMode || 'DIRECT_ORDER';
+  const isContactOnly = orderMode === 'CONTACT_REQUEST';
+  const isBothMode = orderMode === 'BOTH';
+
   const prodId = String(product.id || (product as any)._id || '');
   const isFav = isFavorite(prodId);
+
+  const isComingSoon = dataCache.isProductComingSoon(product);
+  const isOutOfStock = !isComingSoon && dataCache.isProductOutOfStock(product);
+
+  const packOptions = useMemo(() => dataCache.getPackOptions(product), [product]);
+  const hasMultiplePacks = packOptions.length > 1;
+
+  // Find which pack/variant is currently added in the cart
+  const addedPack = useMemo(() => {
+    if (!hasMultiplePacks) return product;
+    for (const pack of packOptions) {
+      const packId = String(pack.id || product.id);
+      if (getCartItemQty(packId, pack.variantId) > 0) {
+        return pack;
+      }
+    }
+    return packOptions[0] || product;
+  }, [hasMultiplePacks, packOptions, product, getCartItemQty]);
 
   const price = Number(product.price || (product.variants && product.variants[0]?.price) || 0);
   const mrp = Number(product.mrp || (product.variants && product.variants[0]?.mrp) || price);
@@ -124,68 +193,264 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
   const unit = product.unit || (product.variants && product.variants[0]?.unit) || '1 unit';
   const imgUri = product.imageUrl || product.image || (product.images && product.images[0]);
 
+  const handleAddPress = () => {
+    if (hasMultiplePacks) {
+      setPackModalOpen(true);
+    } else {
+      onAdd(product);
+    }
+  };
+
+  const handleStepperPress = () => {
+    if (hasMultiplePacks) {
+      setPackModalOpen(true);
+    }
+  };
+
   return (
-    <TouchableOpacity
-      style={[styles.productCell, { width }]}
-      activeOpacity={0.92}
-      onPress={() => onPress(product.id)}
-    >
-      {/* Product Image Media Container */}
-      <ProductMedia
-        imgUri={imgUri}
-        discount={discount}
-        rating={product.rating}
-        ratingCount={product.ratingCount}
-        isFav={isFav}
-        onToggleFav={() => toggleFavorite(product)}
-      />
+    <>
+      <TouchableOpacity
+        style={[styles.productCell, { width }]}
+        activeOpacity={0.92}
+        onPress={() => onPress(product.id)}
+      >
+        {/* Product Image Media Container */}
+        <ProductMedia
+          imgUri={imgUri}
+          discount={discount}
+          rating={product.rating}
+          ratingCount={product.ratingCount}
+          isFav={isFav}
+          onToggleFav={() => toggleFavorite(product)}
+          isOutOfStock={isOutOfStock}
+          isComingSoon={isComingSoon}
+          deliveryScope={product.deliveryScope}
+          orderMode={product.orderMode}
+        />
 
-      {/* Product Details with Subtle Line Card Outline */}
-      <View style={styles.productMeta}>
-        <Text style={styles.productTitle} numberOfLines={2}>
-          {tProd(product)}
-        </Text>
-        <Text style={styles.productUnitText}>{unit}</Text>
+        {/* Product Details with Subtle Line Card Outline */}
+        <View style={styles.productMeta}>
+          <Text style={styles.productTitle} numberOfLines={2}>
+            {tProd(product)}
+          </Text>
+          <Text style={styles.productUnitText} numberOfLines={1}>
+            {unit}
+            {hasMultiplePacks ? (
+              <Text style={{ color: Colors.primaryDark, fontWeight: '700' }}> · {packOptions.length} {lang === 'hi' ? 'साइज़' : 'options'}</Text>
+            ) : null}
+          </Text>
 
-        <View style={styles.priceRow}>
-          <View>
-            <Text style={styles.currentPrice}>₹{price}</Text>
-            {discount > 0 && <Text style={styles.strikethroughPrice}>₹{mrp}</Text>}
-          </View>
-
-          {quantity === 0 ? (
-            <TouchableOpacity
-              style={styles.addBtnPill}
-              activeOpacity={0.8}
-              onPress={() => onAdd(product)}
-            >
-              <Text style={styles.addBtnPillText}>{t('add')}</Text>
-              <Feather name="plus" size={13} color={Colors.primaryDark} style={{ marginLeft: 3 }} />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.qtyPill}>
-              <TouchableOpacity
-                style={styles.qtyTouch}
-                activeOpacity={0.7}
-                hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                onPress={() => onRemove(product.id)}
-              >
-                <Feather name="minus" size={13} color="#FFFFFF" />
-              </TouchableOpacity>
-              <Text style={styles.qtyText}>{quantity}</Text>
-              <TouchableOpacity
-                style={styles.qtyTouch}
-                activeOpacity={0.7}
-                hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                onPress={() => onAdd(product)}
-              >
-                <Feather name="plus" size={13} color="#FFFFFF" />
-              </TouchableOpacity>
+          <View style={styles.priceRow}>
+            <View>
+              <Text style={styles.currentPrice}>₹{price}</Text>
+              {discount > 0 && <Text style={styles.strikethroughPrice}>₹{mrp}</Text>}
             </View>
-          )}
+
+            {isOutOfStock ? (
+              <View style={styles.outOfStockPill}>
+                <Text style={styles.outOfStockPillText}>{t('outOfStock', 'OUT OF STOCK')}</Text>
+              </View>
+            ) : isComingSoon ? (
+              <View style={styles.comingSoonPill}>
+                <Feather name="clock" size={10.5} color="#B45309" style={{ marginRight: 3 }} />
+                <Text style={styles.comingSoonPillText}>{t('soon', 'SOON')}</Text>
+              </View>
+            ) : isContactOnly ? (
+              <TouchableOpacity
+                style={styles.enquireBtnPill}
+                activeOpacity={0.8}
+                onPress={() => setEnquiryModalOpen(true)}
+              >
+                <Feather name="phone-call" size={11.5} color="#059669" style={{ marginRight: 3.5 }} />
+                <Text style={styles.enquireBtnPillText}>{lang === 'hi' ? 'पूछताछ' : 'Enquire'}</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {isBothMode && (
+                  <TouchableOpacity
+                    style={styles.enquireIconBtn}
+                    activeOpacity={0.8}
+                    onPress={() => setEnquiryModalOpen(true)}
+                  >
+                    <Feather name="phone-call" size={12} color="#059669" />
+                  </TouchableOpacity>
+                )}
+                {quantity === 0 ? (
+                  <TouchableOpacity
+                    style={styles.addBtnPill}
+                    activeOpacity={0.8}
+                    onPress={handleAddPress}
+                  >
+                    <Text style={styles.addBtnPillText}>{t('add')}</Text>
+                    <Feather name="plus" size={13} color={Colors.primaryDark} style={{ marginLeft: 3 }} />
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.qtyPill}>
+                    <TouchableOpacity
+                      style={styles.qtyTouch}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                      onPress={() => {
+                        if (hasMultiplePacks && addedPack) {
+                          cartRemove(String(addedPack.id || product.id), addedPack.variantId);
+                        } else {
+                          onRemove(product.id);
+                        }
+                      }}
+                    >
+                      <Feather name="minus" size={13} color="#FFFFFF" />
+                    </TouchableOpacity>
+                    <Text style={styles.qtyText}>{quantity}</Text>
+                    <TouchableOpacity
+                      style={styles.qtyTouch}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                      onPress={() => {
+                        if (hasMultiplePacks && addedPack) {
+                          cartAdd(addedPack, addedPack.variantId);
+                        } else {
+                          onAdd(product);
+                        }
+                      }}
+                    >
+                      <Feather name="plus" size={13} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+
+      {/* Multiple Pack/Unit Choice Modal (Backend Connected) */}
+      {hasMultiplePacks && (
+        <Modal
+          visible={packModalOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPackModalOpen(false)}
+        >
+          <TouchableOpacity
+            style={styles.packModalBackdrop}
+            activeOpacity={1}
+            onPress={() => setPackModalOpen(false)}
+          >
+            <TouchableOpacity
+              style={styles.packModalSheet}
+              activeOpacity={1}
+              onPress={e => e.stopPropagation()}
+            >
+              <View style={styles.packModalHeader}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={styles.packModalTitle} numberOfLines={1}>
+                    {tProd(product)}
+                  </Text>
+                  <Text style={styles.packModalSub}>
+                    {lang === 'hi' ? 'उपलब्ध पैक और यूनिट चुनें' : 'Select available pack size & unit'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setPackModalOpen(false)}
+                  style={styles.packModalCloseBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="x" size={19} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                {packOptions.map((pack: any, pIdx: number) => {
+                  const packId = String(pack.id || product.id);
+                  const pQty = getCartItemQty(packId, pack.variantId);
+                  const pPrice = Number(pack.price || 0);
+                  const pMrp = Number(pack.mrp || pPrice);
+                  const pDiscount = pMrp > pPrice ? Math.round(((pMrp - pPrice) / pMrp) * 100) : 0;
+                  const pOos = dataCache.isProductOutOfStock(pack, pack.stock);
+
+                  return (
+                    <View
+                      key={String(pack.id || pack.variantId || pIdx)}
+                      style={[
+                        styles.packOptionRow,
+                        pIdx === packOptions.length - 1 && { borderBottomWidth: 0 },
+                      ]}
+                    >
+                      <View style={{ flex: 1, paddingRight: 10 }}>
+                        <Text style={styles.packOptionUnit}>{pack.unit || '1 unit'}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                          <Text style={styles.packOptionPrice}>₹{pPrice}</Text>
+                          {pDiscount > 0 && (
+                            <>
+                              <Text style={styles.packOptionMrp}>₹{pMrp}</Text>
+                              <View style={styles.packOptionDiscountBadge}>
+                                <Text style={styles.packOptionDiscountText}>{pDiscount}% OFF</Text>
+                              </View>
+                            </>
+                          )}
+                        </View>
+                        {pOos && (
+                          <Text style={styles.packOptionOosText}>{t('outOfStock', 'Out of stock')}</Text>
+                        )}
+                      </View>
+
+                      {pOos ? (
+                        <View style={styles.packOptionOosPill}>
+                          <Text style={styles.packOptionOosPillText}>{t('outOfStock', 'OOS')}</Text>
+                        </View>
+                      ) : pQty === 0 ? (
+                        <TouchableOpacity
+                          style={styles.packOptionAddBtn}
+                          activeOpacity={0.8}
+                          onPress={() => cartAdd(pack, pack.variantId)}
+                        >
+                          <Text style={styles.packOptionAddBtnText}>{t('add', 'ADD')} +</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={styles.packOptionStepper}>
+                          <TouchableOpacity
+                            style={styles.packOptionStepperTouch}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            onPress={() => cartRemove(packId, pack.variantId)}
+                          >
+                            <Feather name="minus" size={13} color="#FFFFFF" />
+                          </TouchableOpacity>
+                          <Text style={styles.packOptionStepperVal}>{pQty}</Text>
+                          <TouchableOpacity
+                            style={styles.packOptionStepperTouch}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            onPress={() => cartAdd(pack, pack.variantId)}
+                          >
+                            <Feather name="plus" size={13} color="#FFFFFF" />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={styles.packModalDoneBtn}
+                activeOpacity={0.85}
+                onPress={() => setPackModalOpen(false)}
+              >
+                <Text style={styles.packModalDoneBtnText}>{t('done', 'Done')}</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Product Enquiry Modal */}
+      <ProductEnquiryModal
+        visible={enquiryModalOpen}
+        product={product}
+        onClose={() => setEnquiryModalOpen(false)}
+      />
+    </>
   );
 }, (prev, next) => {
   return (
@@ -194,6 +459,9 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
     prev.width === next.width &&
     prev.product.price === next.product.price &&
     prev.product.stock === next.product.stock &&
+    prev.product.status === next.product.status &&
+    (prev.product as any).isSoon === (next.product as any).isSoon &&
+    (prev.product as any).comingSoon === (next.product as any).comingSoon &&
     prev.product.name === next.product.name
   );
 });
@@ -282,6 +550,22 @@ const styles = StyleSheet.create({
     color: '#059669',
     marginLeft: 2,
   },
+  panIndiaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 0.5,
+    borderColor: '#DDD6FE',
+  },
+  panIndiaPillText: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: '#6D28D9',
+    marginLeft: 2,
+  },
   // Website .card-rating-badge
   ratingBadge: {
     flexDirection: 'row',
@@ -362,6 +646,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
+  enquireBtnPill: {
+    height: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  enquireBtnPillText: {
+    color: '#059669',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  enquireIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 5,
+  },
   // Increased Quantity pill size with generous touch areas
   qtyPill: {
     height: 34,
@@ -384,5 +695,223 @@ const styles = StyleSheet.create({
     minWidth: 20,
     textAlign: 'center',
     marginHorizontal: 1,
+  },
+  productImgDimmed: {
+    opacity: 0.72,
+  },
+  soonMediaOverlay: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(254, 243, 199, 0.96)',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    zIndex: 3,
+  },
+  soonMediaOverlayText: {
+    color: '#B45309',
+    fontSize: 8.5,
+    fontWeight: '800',
+    marginLeft: 3,
+  },
+  outOfStockMediaOverlay: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    backgroundColor: 'rgba(241, 245, 249, 0.96)',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    zIndex: 3,
+  },
+  outOfStockMediaOverlayText: {
+    color: '#64748B',
+    fontSize: 8.5,
+    fontWeight: '800',
+  },
+  outOfStockPill: {
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  outOfStockPillText: {
+    color: '#94A3B8',
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  comingSoonPill: {
+    height: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  comingSoonPillText: {
+    color: '#B45309',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  // --- Pack Modal Styles ---
+  packModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  packModalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 18,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  packModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    marginBottom: 8,
+  },
+  packModalTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  packModalSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  packModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  packOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  packOptionUnit: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  packOptionPrice: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  packOptionMrp: {
+    fontSize: 11.5,
+    color: '#94A3B8',
+    textDecorationLine: 'line-through',
+    marginLeft: 6,
+  },
+  packOptionDiscountBadge: {
+    marginLeft: 6,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  packOptionDiscountText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  packOptionOosText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginTop: 2,
+  },
+  packOptionOosPill: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  packOptionOosPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#94A3B8',
+  },
+  packOptionAddBtn: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  packOptionAddBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  packOptionStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#059669',
+    borderRadius: 8,
+    height: 32,
+    paddingHorizontal: 4,
+  },
+  packOptionStepperTouch: {
+    width: 26,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  packOptionStepperVal: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    minWidth: 18,
+    textAlign: 'center',
+    marginHorizontal: 4,
+  },
+  packModalDoneBtn: {
+    marginTop: 14,
+    backgroundColor: '#059669',
+    height: 42,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  packModalDoneBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

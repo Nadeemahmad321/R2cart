@@ -109,7 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const resolvedRole = res.data.user.role === 'DELIVERY_PERSON' ? 'DELIVERY_PERSON' : 'CUSTOMER';
         setRole(resolvedRole);
         // Sync FCM device token with backend
-        notificationService.syncDeviceToken('CUSTOMER').catch(() => {});
+        notificationService.syncDeviceToken(resolvedRole === 'DELIVERY_PERSON' ? 'DELIVERY' : 'CUSTOMER').catch(() => {});
         return res.data.user;
       }
       return null;
@@ -136,11 +136,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
-      await notificationService.unregisterToken();
-    } catch {}
-    await api.clearToken();
+      // 1. Immediately wipe local auth tokens & user cache from AsyncStorage
+      await api.clearToken();
+    } catch (e) {
+      console.log('[AuthContext] clearToken error:', e);
+    }
+    // 2. Instantly reset auth session state so subscribers react immediately
     setUser(null);
     setRole(null);
+
+    // 3. Gracefully unregister FCM push token in background without blocking UI
+    notificationService.unregisterToken().catch(() => {});
   };
 
   const refreshProfile = async () => {

@@ -7,12 +7,12 @@ import {
   TouchableOpacity,
   TextInput,
   Image,
-  Alert,
   ActivityIndicator,
   Modal,
   FlatList,
   RefreshControl,
   Platform,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,7 +20,10 @@ import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { useToast } from '../../context/ToastContext';
 import { api } from '../../services/api';
+import { dataCache } from '../../services/dataCache';
 import { Address, Category } from '../../types';
 import { AddressCardSkeleton, CartScreenSkeleton, Skeleton } from '../../components/common/Skeleton';
 
@@ -67,9 +70,11 @@ interface CartItemRowProps {
   item: any;
   isLast: boolean;
   onUpdateQty: (productId: string, quantity: number, variantId?: string) => void;
+  onDelete: (productId: string, variantId?: string) => void;
 }
 
-const CartItemRow = React.memo(({ item, isLast, onUpdateQty }: CartItemRowProps) => {
+const CartItemRow = React.memo(({ item, isLast, onUpdateQty, onDelete }: CartItemRowProps) => {
+  const { t, tProd } = useLanguage();
   const [imgError, setImgError] = useState(false);
   const rawImg = item?.imageUrl || '';
   const isValidUrl =
@@ -82,53 +87,113 @@ const CartItemRow = React.memo(({ item, isLast, onUpdateQty }: CartItemRowProps)
   const qty = Math.max(1, Number(item?.quantity) || 1);
   const targetId = String(item?.productId || item?.id || '').replace(/_default$/, '').trim();
 
+  // Dynamic Out of Stock & Coming Soon detection
+  const cachedProd = dataCache.getProductById(targetId);
+  const isSoon = dataCache.isProductComingSoon(cachedProd || item);
+  const stock = item?.stock !== undefined ? Number(item.stock) : (cachedProd?.stock !== undefined ? Number(cachedProd.stock) : undefined);
+  const status = item?.status || cachedProd?.status;
+  const isOutOfStock = !isSoon && ((stock !== undefined && stock <= 0) || status === 'INACTIVE');
+  const isLowStock = !isSoon && !isOutOfStock && stock !== undefined && stock > 0 && stock < qty;
+
   return (
-    <View style={[styles.itemFlatRow, isLast && { borderBottomWidth: 0 }]}>
+    <View style={[styles.itemFlatRow, isLast && { borderBottomWidth: 0 }, isOutOfStock && styles.itemFlatRowOos]}>
       <View style={styles.itemImgWrap}>
         {isValidUrl ? (
           <Image
             source={{ uri: rawImg }}
-            style={styles.itemImg}
+            style={[styles.itemImg, (isOutOfStock || isSoon) && { opacity: 0.45 }]}
             resizeMode="contain"
             onError={() => setImgError(true)}
           />
         ) : (
           <Feather name="package" size={22} color="#94A3B8" />
         )}
+        {isOutOfStock ? (
+          <View style={styles.itemImgOosBadge}>
+            <Text style={styles.itemImgOosText}>OOS</Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.itemDetails}>
-        <Text style={styles.itemName} numberOfLines={2}>
-          {item?.name || 'Product'}
+        <Text style={[styles.itemName, (isOutOfStock || isSoon) && { color: '#64748B' }]} numberOfLines={2}>
+          {tProd(item) || 'Product'}
         </Text>
         {item?.unit ? <Text style={styles.itemUnit}>{item.unit}</Text> : null}
-        <Text style={styles.itemPrice}>₹{price}</Text>
+
+        {/* Warning Badges */}
+        {isOutOfStock ? (
+          <View style={styles.cartOosTag}>
+            <Feather name="alert-circle" size={11} color="#DC2626" style={{ marginRight: 3.5 }} />
+            <Text style={styles.cartOosTagText}>
+              {t('outOfStock', 'Out of stock!')} · {t('pleaseRemove', 'Please remove')}
+            </Text>
+          </View>
+        ) : isSoon ? (
+          <View style={styles.cartSoonTag}>
+            <Feather name="clock" size={11} color="#B45309" style={{ marginRight: 3.5 }} />
+            <Text style={styles.cartSoonTagText}>
+              {t('comingSoon', 'Coming Soon')} · {t('removeToCheckout', 'Remove to checkout')}
+            </Text>
+          </View>
+        ) : isLowStock ? (
+          <View style={styles.cartLowTag}>
+            <Feather name="alert-triangle" size={11} color="#D97706" style={{ marginRight: 3.5 }} />
+            <Text style={styles.cartLowTagText}>
+              Only {stock} left in stock
+            </Text>
+          </View>
+        ) : null}
+
+        <Text style={[styles.itemPrice, (isOutOfStock || isSoon) && { color: '#94A3B8' }]}>₹{price}</Text>
       </View>
 
-      {/* Stepper matching Website */}
-      <View style={styles.stepperContainer}>
+      {/* Stepper or Remove Button */}
+      {isOutOfStock || isSoon ? (
         <TouchableOpacity
-          style={styles.stepperBtn}
-          onPress={() => onUpdateQty(targetId, qty - 1, item?.variantId)}
-          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          activeOpacity={0.7}
+          style={styles.cartRemoveItemBtn}
+          onPress={() => onDelete(targetId, item?.variantId)}
+          activeOpacity={0.75}
         >
-          <Feather
-            name={qty === 1 ? 'trash-2' : 'minus'}
-            size={13}
-            color="#FFFFFF"
-          />
+          <Feather name="trash-2" size={13} color="#DC2626" style={{ marginRight: 4 }} />
+          <Text style={styles.cartRemoveItemText}>{t('remove', 'Remove')}</Text>
         </TouchableOpacity>
-        <Text style={styles.stepperVal}>{qty}</Text>
-        <TouchableOpacity
-          style={styles.stepperBtn}
-          onPress={() => onUpdateQty(targetId, qty + 1, item?.variantId)}
-          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          activeOpacity={0.7}
-        >
-          <Feather name="plus" size={13} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={styles.stepperContainer}>
+            <TouchableOpacity
+              style={styles.stepperBtn}
+              onPress={() => onUpdateQty(targetId, qty - 1, item?.variantId)}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              activeOpacity={0.7}
+            >
+              <Feather
+                name={qty === 1 ? 'trash-2' : 'minus'}
+                size={13}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+            <Text style={styles.stepperVal}>{qty}</Text>
+            <TouchableOpacity
+              style={styles.stepperBtn}
+              onPress={() => onUpdateQty(targetId, qty + 1, item?.variantId)}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              activeOpacity={0.7}
+            >
+              <Feather name="plus" size={13} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            style={styles.cartDirectTrashBtn}
+            onPress={() => onDelete(targetId, item?.variantId)}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            activeOpacity={0.7}
+            accessibilityLabel="Remove item from basket"
+          >
+            <Feather name="trash-2" size={13} color="#DC2626" />
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 });
@@ -138,16 +203,25 @@ export const CartScreen = ({ route, navigation }: any) => {
   const appliedCodeFromRoute = route?.params?.appliedCode;
   const { items, updateQuantity, deleteItem, clearCart, itemTotal, syncCartWithBackend, isSyncing, isInitialized } = useCart();
   const { user } = useAuth();
+  const { notify } = useToast();
+  const { t, tProd, tCat, prefetchTranslations } = useLanguage();
 
   const validItems = useMemo(
     () => (Array.isArray(items) ? items.filter(i => i && (i.productId || i.id)) : []),
     [items]
   );
 
+  useEffect(() => {
+    if (validItems.length > 0) {
+      prefetchTranslations(validItems.map((i: any) => i.name).filter(Boolean));
+    }
+  }, [validItems, prefetchTranslations]);
+
   const [pullRefreshing, setPullRefreshing] = useState<boolean>(false);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
   const [addressModalVisible, setAddressModalVisible] = useState<boolean>(false);
+  const [clearModalVisible, setClearModalVisible] = useState<boolean>(false);
   const [loadingAddresses, setLoadingAddresses] = useState<boolean>(false);
 
   // Delivery Mode & Scheduling
@@ -233,16 +307,28 @@ export const CartScreen = ({ route, navigation }: any) => {
 
   // Resolve dynamic delivery rules based on selected delivery address & backend coverage
   const deliveryRules = useMemo(() => {
+    const isPanIndiaCart = validItems.length > 0 && validItems.every(i => i.deliveryScope === 'PAN_INDIA');
+    if (isPanIndiaCart) {
+      const totalShippingFee = validItems.reduce((acc, itm) => acc + (Number(itm.shippingFee) || 0), 0);
+      return {
+        freeDeliveryThreshold: 0,
+        deliveryFee: totalShippingFee,
+        estimatedDelivery: '5-10 Business Days (Courier)',
+        isCourier: true,
+      };
+    }
+
     const settings = deliveryData?.settings || (deliveryData as any) || {};
     const fallbackThreshold = Number(settings.freeDeliveryThreshold ?? 499);
     const fallbackFee = Number(settings.deliveryFee ?? 20);
-    const fallbackEta = settings.estimatedDelivery || '15-20 mins';
+    const fallbackEta = settings.estimatedDelivery || dataCache.getEstimatedDelivery('20-30 mins');
 
     if (!selectedAddress || !deliveryData) {
       return {
         freeDeliveryThreshold: fallbackThreshold,
         deliveryFee: fallbackFee,
         estimatedDelivery: fallbackEta,
+        isCourier: false,
       };
     }
 
@@ -262,6 +348,7 @@ export const CartScreen = ({ route, navigation }: any) => {
         freeDeliveryThreshold: Number(matchedVillage.freeDeliveryThreshold ?? fallbackThreshold),
         deliveryFee: Number(matchedVillage.deliveryFee ?? fallbackFee),
         estimatedDelivery: matchedVillage.estimatedMinutes ? `${matchedVillage.estimatedMinutes} mins` : fallbackEta,
+        isCourier: false,
       };
     }
 
@@ -282,6 +369,7 @@ export const CartScreen = ({ route, navigation }: any) => {
         freeDeliveryThreshold: Number(matchedArea.freeDeliveryThreshold ?? fallbackThreshold),
         deliveryFee: Number(matchedArea.deliveryFee ?? fallbackFee),
         estimatedDelivery: matchedArea.estimatedMinutes ? `${matchedArea.estimatedMinutes} mins` : fallbackEta,
+        isCourier: false,
       };
     }
 
@@ -289,8 +377,9 @@ export const CartScreen = ({ route, navigation }: any) => {
       freeDeliveryThreshold: fallbackThreshold,
       deliveryFee: fallbackFee,
       estimatedDelivery: fallbackEta,
+      isCourier: false,
     };
-  }, [deliveryData, selectedAddress]);
+  }, [deliveryData, selectedAddress, validItems]);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [availableCoupons, setAvailableCoupons] = useState<any[]>([]);
@@ -395,14 +484,12 @@ export const CartScreen = ({ route, navigation }: any) => {
   const applyCouponCode = async (codeToApply?: string) => {
     const code = (codeToApply || couponCode).trim().toUpperCase();
     if (!code) {
-      Alert.alert('Coupon Required', 'Please enter a coupon code.');
+      notify('Please enter a coupon code.', 'info');
       return;
     }
     if (!user) {
-      Alert.alert('Sign In Required', 'Please sign in to apply coupon offers.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign In', onPress: () => navigation.navigate('CustomerLogin') },
-      ]);
+      notify('Please sign in to apply coupon offers.', 'info');
+      navigation.navigate('CustomerLogin');
       return;
     }
 
@@ -413,11 +500,11 @@ export const CartScreen = ({ route, navigation }: any) => {
       setDiscountAmount(discountVal);
       setAppliedCoupon({ code, discount: discountVal });
       setCouponCode(code);
-      Alert.alert('Coupon Applied!', `You saved ₹${discountVal} with ${code}`);
+      notify(`Coupon Applied! You saved ₹${discountVal} with ${code}`, 'success');
     } catch (err: any) {
       setAppliedCoupon(null);
       setDiscountAmount(0);
-      Alert.alert('Invalid Coupon', err.message || 'This coupon is not valid or has expired.');
+      notify(err.message || 'This coupon is not valid or has expired.', 'error');
     } finally {
       setValidatingCoupon(false);
     }
@@ -435,25 +522,53 @@ export const CartScreen = ({ route, navigation }: any) => {
   const effectiveDeliveryFee = itemTotal >= deliveryRules.freeDeliveryThreshold ? 0 : deliveryRules.deliveryFee;
   const finalTotal = Math.max(0, itemTotal + effectiveDeliveryFee + tip - discountAmount);
 
+  // Dynamic Out of Stock / Coming Soon check for items in basket
+  const hasOutOfStockItems = useMemo(() => {
+    return validItems.some(i => {
+      const targetId = String(i.productId || i.id || '').replace(/_default$/, '').trim();
+      const cached = dataCache.getProductById(targetId);
+      const isSoon = dataCache.isProductComingSoon(cached || i);
+      const stock = i?.stock !== undefined ? Number(i.stock) : (cached?.stock !== undefined ? Number(cached.stock) : undefined);
+      const status = i?.status || cached?.status;
+      return !isSoon && ((stock !== undefined && stock <= 0) || status === 'INACTIVE');
+    });
+  }, [validItems]);
+
+  const hasComingSoonItems = useMemo(() => {
+    return validItems.some(i => {
+      const targetId = String(i.productId || i.id || '').replace(/_default$/, '').trim();
+      const cached = dataCache.getProductById(targetId);
+      return dataCache.isProductComingSoon(cached || i);
+    });
+  }, [validItems]);
+
+  const hasUnavailableItems = hasOutOfStockItems || hasComingSoonItems;
+
   const handlePlaceOrder = async () => {
     if (validItems.length === 0) {
-      Alert.alert('Empty Basket', 'Please add items to your basket first.');
+      notify('Please add items to your basket first.', 'info');
+      return;
+    }
+
+    if (hasOutOfStockItems) {
+      notify('Some items in your basket are out of stock. Please remove them to proceed.', 'error');
+      return;
+    }
+
+    if (hasComingSoonItems) {
+      notify('Some items in your basket are coming soon. Please remove them to proceed.', 'error');
       return;
     }
 
     if (!user) {
-      Alert.alert('Sign In Required', 'Please sign in to place your order.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign In', onPress: () => navigation.navigate('CustomerLogin') },
-      ]);
+      notify('Please sign in to place your order.', 'info');
+      navigation.navigate('CustomerLogin');
       return;
     }
 
     if (!selectedAddress || !selectedAddress.id) {
-      Alert.alert('Address Required', 'Please add or select a delivery address before placing your order.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Add Address', onPress: () => navigation.navigate('Addresses') },
-      ]);
+      notify('Please add or select a delivery address before placing your order.', 'info');
+      navigation.navigate('Addresses');
       return;
     }
 
@@ -466,10 +581,10 @@ export const CartScreen = ({ route, navigation }: any) => {
         .filter(Boolean)
         .join(', ');
 
-      if (deliveryType === 'INSTANT' && !storeSchedule.allowImmediateOrders) {
-        Alert.alert(
-          'Instant Delivery Closed',
-          storeSchedule.statusReason || 'Store is currently closed for instant delivery. Please select a scheduled delivery slot.'
+      if (!deliveryRules.isCourier && deliveryType === 'INSTANT' && !storeSchedule.allowImmediateOrders) {
+        notify(
+          storeSchedule.statusReason || 'Store is currently closed for instant delivery. Please select a scheduled delivery slot.',
+          'error'
         );
         setDeliveryType('SCHEDULED');
         setPlacing(false);
@@ -477,7 +592,7 @@ export const CartScreen = ({ route, navigation }: any) => {
       }
 
       if (deliveryType === 'SCHEDULED' && (!selectedDate || !selectedSlot)) {
-        Alert.alert('Slot Required', 'Please choose a delivery date and time slot for your scheduled delivery.');
+        notify('Please choose a delivery date and time slot for your scheduled delivery.', 'info');
         setPlacing(false);
         return;
       }
@@ -504,9 +619,24 @@ export const CartScreen = ({ route, navigation }: any) => {
         totalAmount: finalTotal,
       });
     } catch (err: any) {
-      Alert.alert('Checkout Failed', err.message || 'Could not complete your order. Please try again.');
+      notify(err.message || 'Could not complete your order. Please try again.', 'error');
     } finally {
       setPlacing(false);
+    }
+  };
+
+  const handleClearAll = useCallback(() => {
+    setClearModalVisible(true);
+  }, []);
+
+  const handleConfirmClear = async () => {
+    try {
+      setClearModalVisible(false);
+      removeCoupon();
+      await clearCart();
+      notify(t('cartCleared', 'Basket cleared successfully'), 'success');
+    } catch (err: any) {
+      console.log('[CartScreen] Error clearing cart:', err);
     }
   };
 
@@ -537,122 +667,6 @@ export const CartScreen = ({ route, navigation }: any) => {
     return parts.length > 0 ? parts.join(', ') : 'Delivery Address';
   };
 
-  // Initial loading state with Skeleton (prevents empty basket flash)
-  if (!isInitialized) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <CartScreenSkeleton />
-      </View>
-    );
-  }
-
-  // --- EMPTY CART STATE MATCHING WEBSITE ---
-  if (validItems.length === 0) {
-    return (
-      <View style={styles.container}>
-        {/* Simple Header */}
-        <View style={[styles.flatHeader, { paddingTop: insets.top + 10 }]}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Feather name="arrow-left" size={20} color="#0F172A" />
-          </TouchableOpacity>
-          <Text style={styles.flatHeaderTitle}>Shopping Basket</Text>
-          <View style={{ width: 36 }} />
-        </View>
-
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.emptyScrollContent, { paddingBottom: 40 + insets.bottom }]}
-          refreshControl={
-            <RefreshControl
-              refreshing={pullRefreshing}
-              onRefresh={onPullRefresh}
-              tintColor={Colors.primary}
-              colors={[Colors.primary]}
-            />
-          }
-        >
-          {/* Hero Bag Glow */}
-          <View style={styles.emptyBagCircle}>
-            <Feather name="shopping-bag" size={38} color="#FFFFFF" />
-          </View>
-
-          {/* Dynamic ETA Pill */}
-          <View style={styles.emptyEtaPill}>
-            <Feather name="zap" size={12} color="#059669" />
-            <Text style={styles.emptyEtaText}>Delivery in {deliveryRules.estimatedDelivery}</Text>
-          </View>
-
-          <Text style={styles.emptyTitle}>Your basket is empty</Text>
-          <Text style={styles.emptySub}>
-            Explore fresh fruits, vegetables, dairy & daily grocery essentials delivered fast to your doorstep.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.shopNowBtn}
-            activeOpacity={0.88}
-            onPress={() => navigation.navigate('MainTabs')}
-          >
-            <Text style={styles.shopNowText}>Start Shopping</Text>
-            <Feather name="arrow-right" size={15} color="#FFFFFF" style={{ marginLeft: 6 }} />
-          </TouchableOpacity>
-
-          {/* Popular Categories from Backend */}
-          {categories.length > 0 && (
-            <View style={styles.emptyCategoriesWrap}>
-              <Text style={styles.emptySectionHeading}>Popular Categories</Text>
-              <View style={styles.emptyCatGrid}>
-                {categories.map(cat => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={styles.emptyCatChip}
-                    onPress={() =>
-                      navigation.navigate('MainTabs', {
-                        screen: 'CategoriesTab',
-                        params: {
-                          categoryId: cat.id,
-                          categorySlug: cat.slug,
-                          categoryName: cat.name,
-                        },
-                      })
-                    }
-                  >
-                    {cat.imageUrl && typeof cat.imageUrl === 'string' && cat.imageUrl.startsWith('http') ? (
-                      <Image source={{ uri: cat.imageUrl }} style={styles.emptyCatImg} resizeMode="contain" />
-                    ) : (
-                      <Feather name="grid" size={14} color={Colors.primaryDark} />
-                    )}
-                    <Text style={styles.emptyCatName} numberOfLines={1}>
-                      {cat.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* Quality Assurance Strip */}
-          <View style={styles.trustStrip}>
-            <View style={styles.trustCol}>
-              <Feather name="zap" size={17} color="#059669" />
-              <Text style={styles.trustTitle}>{deliveryRules.estimatedDelivery}</Text>
-              <Text style={styles.trustSub}>Lightning Fast</Text>
-            </View>
-            <View style={[styles.trustCol, styles.trustColMiddle]}>
-              <Feather name="check-circle" size={17} color="#059669" />
-              <Text style={styles.trustTitle}>100% Fresh</Text>
-              <Text style={styles.trustSub}>Quality Checked</Text>
-            </View>
-            <View style={styles.trustCol}>
-              <Feather name="shield" size={17} color="#059669" />
-              <Text style={styles.trustTitle}>Safe Delivery</Text>
-              <Text style={styles.trustSub}>Hygienic Packing</Text>
-            </View>
-          </View>
-        </ScrollView>
-      </View>
-    );
-  }
-
   const keyExtractor = useCallback((item: any, index: number) => {
     return String(item?.id || item?.productId || index);
   }, []);
@@ -664,10 +678,11 @@ export const CartScreen = ({ route, navigation }: any) => {
           item={item}
           isLast={index === validItems.length - 1}
           onUpdateQty={updateQuantity}
+          onDelete={deleteItem}
         />
       </View>
     ),
-    [validItems.length, updateQuantity]
+    [validItems.length, updateQuantity, deleteItem]
   );
 
   const renderHeader = useCallback(
@@ -1037,12 +1052,40 @@ export const CartScreen = ({ route, navigation }: any) => {
         {/* Flat Review Items List Header */}
         <View style={[styles.flatSection, { paddingBottom: 0 }]}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Items in Basket ({validItems.length})</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('MainTabs')}>
-              <Text style={styles.actionLinkText}>+ Add more</Text>
-            </TouchableOpacity>
+            <Text style={styles.sectionTitle}>{t('cart', 'Items in Basket')} ({validItems.length})</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <TouchableOpacity onPress={() => navigation.navigate('MainTabs')}>
+                <Text style={styles.actionLinkText}>{t('addMore', '+ Add more')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleClearAll}
+                style={styles.clearAllBtn}
+                activeOpacity={0.7}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Feather name="trash-2" size={11} color="#DC2626" style={{ marginRight: 3 }} />
+                <Text style={styles.clearAllText}>{t('clearAll', 'Clear All')}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
+
+        {/* Out of Stock / Coming Soon Notice Banner */}
+        {hasUnavailableItems && (
+          <View style={styles.cartOosBanner}>
+            <View style={styles.cartOosBannerIcon}>
+              <Feather name="alert-circle" size={17} color="#DC2626" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cartOosBannerTitle}>
+                {hasOutOfStockItems ? t('cartOosAlertTitle', 'Items Out of Stock') : t('comingSoon', 'Coming Soon')}
+              </Text>
+              <Text style={styles.cartOosBannerDesc}>
+                {t('cartOosAlertDesc', 'Please remove out of stock items from your basket before placing order.')}
+              </Text>
+            </View>
+          </View>
+        )}
       </>
     ),
     [
@@ -1063,6 +1106,8 @@ export const CartScreen = ({ route, navigation }: any) => {
       diffForFree,
       freePercent,
       validItems.length,
+      hasUnavailableItems,
+      hasOutOfStockItems,
       fetchSlots,
       navigation,
     ]
@@ -1249,36 +1294,36 @@ export const CartScreen = ({ route, navigation }: any) => {
 
         {/* Bill Summary (Clean Flat Rows) */}
         <View style={styles.flatSection}>
-          <Text style={styles.sectionTitle}>Bill Details</Text>
+          <Text style={styles.sectionTitle}>{t('billDetails', 'Bill Details')}</Text>
           <View style={styles.billRow}>
-            <Text style={styles.billLabel}>Item Total</Text>
+            <Text style={styles.billLabel}>{t('subtotal', 'Item Total')}</Text>
             <Text style={styles.billValue}>₹{itemTotal}</Text>
           </View>
 
           <View style={styles.billRow}>
-            <Text style={styles.billLabel}>Delivery Fee</Text>
+            <Text style={styles.billLabel}>{t('deliveryFee', 'Delivery Fee')}</Text>
             <Text style={[styles.billValue, effectiveDeliveryFee === 0 && styles.freeValue]}>
-              {effectiveDeliveryFee === 0 ? 'FREE' : `₹${effectiveDeliveryFee}`}
+              {effectiveDeliveryFee === 0 ? t('free', 'FREE') : `₹${effectiveDeliveryFee}`}
             </Text>
           </View>
 
           {discountAmount > 0 && (
             <View style={styles.billRow}>
-              <Text style={styles.discountLabel}>Coupon Discount ({appliedCoupon?.code})</Text>
+              <Text style={styles.discountLabel}>{t('discount', 'Coupon Discount')} ({appliedCoupon?.code})</Text>
               <Text style={styles.discountValue}>−₹{discountAmount}</Text>
             </View>
           )}
 
           {tip > 0 && (
             <View style={styles.billRow}>
-              <Text style={styles.billLabel}>Rider Tip</Text>
+              <Text style={styles.billLabel}>{t('riderTip', 'Rider Tip')}</Text>
               <Text style={styles.billValue}>₹{tip}</Text>
             </View>
           )}
 
           <View style={[styles.billRow, styles.grandTotalRow]}>
             <View>
-              <Text style={styles.grandLabel}>To Pay</Text>
+              <Text style={styles.grandLabel}>{t('totalPayable', 'To Pay')}</Text>
               <Text style={styles.taxInclusiveText}>Inclusive of all taxes</Text>
             </View>
             <Text style={styles.grandValue}>₹{finalTotal}</Text>
@@ -1305,82 +1350,190 @@ export const CartScreen = ({ route, navigation }: any) => {
   return (
     <View style={styles.container}>
       {/* Sleek Top Header with Single Clean Back Button */}
-      <View style={[styles.flatHeader, { paddingTop: insets.top + 8 }]}>
+      <View style={[styles.flatHeader, { paddingTop: insets.top + (validItems.length === 0 ? 10 : 8) }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
           activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Feather name="arrow-left" size={20} color="#0F172A" />
+          <Feather name="chevron-left" size={24} color="#0F172A" />
         </TouchableOpacity>
         <View style={styles.headerTitleWrap}>
-          <Text style={styles.flatHeaderTitle}>My Basket</Text>
+          <Text style={styles.flatHeaderTitle}>
+            {validItems.length === 0 ? t('cart', 'Shopping Basket') : t('cart', 'My Basket')}
+          </Text>
         </View>
         <View style={{ width: 36 }} />
       </View>
 
-      <FlatList
-        data={validItems}
-        keyExtractor={keyExtractor}
-        renderItem={renderCartItem}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={renderFooter}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: 120 + insets.bottom },
-        ]}
-        showsVerticalScrollIndicator={false}
-        initialNumToRender={8}
-        maxToRenderPerBatch={10}
-        windowSize={7}
-        removeClippedSubviews={Platform.OS === 'android'}
-        refreshControl={
-          <RefreshControl
-            refreshing={pullRefreshing}
-            onRefresh={onPullRefresh}
-            tintColor={Colors.primary}
-            colors={[Colors.primary]}
-          />
-        }
-      />
-
-      {/* Docked Sticky Bottom Bar */}
-      <View style={[styles.bottomBar, { paddingBottom: Math.max(14, insets.bottom + 8) }]}>
-        <View>
-          <Text style={styles.bottomTotalText}>₹{finalTotal}</Text>
-          <View style={styles.bottomSubRow}>
-            {deliveryType === 'SCHEDULED' ? (
-              <>
-                <Feather name="calendar" size={11} color="#059669" style={{ marginRight: 4 }} />
-                <Text style={styles.bottomItemsCount} numberOfLines={1}>
-                  {selectedSlot ? `Scheduled: ${selectedSlot.label || selectedDate}` : 'Scheduled Delivery'}
-                </Text>
-              </>
-            ) : (
-              <>
-                <Feather name="zap" size={11} color="#059669" style={{ marginRight: 4 }} />
-                <Text style={styles.bottomItemsCount}>
-                  Instant Delivery ({deliveryRules.estimatedDelivery})
-                </Text>
-              </>
-            )}
-          </View>
+      {!isInitialized ? (
+        <View style={{ flex: 1 }}>
+          <CartScreenSkeleton />
         </View>
-
-        <TouchableOpacity
-          style={[styles.checkoutBtn, placing && styles.btnDisabled]}
-          activeOpacity={0.88}
-          disabled={placing}
-          onPress={handlePlaceOrder}
+      ) : validItems.length === 0 ? (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.emptyScrollContent, { paddingBottom: 40 + insets.bottom }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={pullRefreshing}
+              onRefresh={onPullRefresh}
+              tintColor={Colors.primary}
+              colors={[Colors.primary]}
+            />
+          }
         >
-          {placing ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.checkoutBtnText}>Place Order</Text>
+          {/* Hero Bag Glow */}
+          <View style={styles.emptyBagCircle}>
+            <Feather name="shopping-bag" size={38} color="#FFFFFF" />
+          </View>
+
+          {/* Dynamic ETA Pill */}
+          <View style={styles.emptyEtaPill}>
+            <Feather name="zap" size={12} color="#059669" />
+            <Text style={styles.emptyEtaText}>{t('deliveryIn', 'Delivery in')} {deliveryRules.estimatedDelivery}</Text>
+          </View>
+
+          <Text style={styles.emptyTitle}>{t('emptyCart', 'Your basket is empty')}</Text>
+          <Text style={styles.emptySub}>
+            {t('emptyCartSub', 'Explore fresh fruits, vegetables, dairy & daily grocery essentials delivered fast to your doorstep.')}
+          </Text>
+
+          <TouchableOpacity
+            style={styles.shopNowBtn}
+            activeOpacity={0.88}
+            onPress={() => navigation.navigate('MainTabs')}
+          >
+            <Text style={styles.shopNowText}>{t('startShopping', 'Start Shopping')}</Text>
+            <Feather name="arrow-right" size={15} color="#FFFFFF" style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
+
+          {/* Popular Categories from Backend */}
+          {categories.length > 0 && (
+            <View style={styles.emptyCategoriesWrap}>
+              <Text style={styles.emptySectionHeading}>{t('popularCategories', 'Popular Categories')}</Text>
+              <View style={styles.emptyCatGrid}>
+                {categories.map(cat => (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={styles.emptyCatChip}
+                    onPress={() =>
+                      navigation.navigate('MainTabs', {
+                        screen: 'CategoriesTab',
+                        params: {
+                          categoryId: cat.id,
+                          categorySlug: cat.slug,
+                          categoryName: cat.name,
+                        },
+                      })
+                    }
+                  >
+                    {cat.imageUrl && typeof cat.imageUrl === 'string' && cat.imageUrl.startsWith('http') ? (
+                      <Image source={{ uri: cat.imageUrl }} style={styles.emptyCatImg} resizeMode="contain" />
+                    ) : (
+                      <Feather name="grid" size={14} color={Colors.primaryDark} />
+                    )}
+                    <Text style={styles.emptyCatName} numberOfLines={1}>
+                      {tCat(cat.name)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           )}
-        </TouchableOpacity>
-      </View>
+
+          {/* Quality Assurance Strip */}
+          <View style={styles.trustStrip}>
+            <View style={styles.trustCol}>
+              <Feather name="zap" size={17} color="#059669" />
+              <Text style={styles.trustTitle}>{deliveryRules.estimatedDelivery}</Text>
+              <Text style={styles.trustSub}>Lightning Fast</Text>
+            </View>
+            <View style={[styles.trustCol, styles.trustColMiddle]}>
+              <Feather name="check-circle" size={17} color="#059669" />
+              <Text style={styles.trustTitle}>100% Fresh</Text>
+              <Text style={styles.trustSub}>Quality Checked</Text>
+            </View>
+            <View style={styles.trustCol}>
+              <Feather name="shield" size={17} color="#059669" />
+              <Text style={styles.trustTitle}>Safe Delivery</Text>
+              <Text style={styles.trustSub}>Hygienic Packing</Text>
+            </View>
+          </View>
+        </ScrollView>
+      ) : (
+        <>
+          <FlatList
+            data={validItems}
+            keyExtractor={keyExtractor}
+            renderItem={renderCartItem}
+            ListHeaderComponent={renderHeader}
+            ListFooterComponent={renderFooter}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: 120 + insets.bottom },
+            ]}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={8}
+            maxToRenderPerBatch={10}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS === 'android'}
+            refreshControl={
+              <RefreshControl
+                refreshing={pullRefreshing}
+                onRefresh={onPullRefresh}
+                tintColor={Colors.primary}
+                colors={[Colors.primary]}
+              />
+            }
+          />
+
+          {/* Docked Sticky Bottom Bar */}
+          <View style={[styles.bottomBar, { paddingBottom: Math.max(14, insets.bottom + 8) }]}>
+            <View>
+              <Text style={styles.bottomTotalText}>₹{finalTotal}</Text>
+              <View style={styles.bottomSubRow}>
+                {deliveryType === 'SCHEDULED' ? (
+                  <>
+                    <Feather name="calendar" size={11} color="#059669" style={{ marginRight: 4 }} />
+                    <Text style={styles.bottomItemsCount} numberOfLines={1}>
+                      {selectedSlot ? `Scheduled: ${selectedSlot.label || selectedDate}` : 'Scheduled Delivery'}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Feather name="zap" size={11} color="#059669" style={{ marginRight: 4 }} />
+                    <Text style={styles.bottomItemsCount}>
+                      Instant Delivery ({deliveryRules.estimatedDelivery})
+                    </Text>
+                  </>
+                )}
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.checkoutBtn, (placing || hasUnavailableItems) && styles.btnDisabled]}
+              activeOpacity={0.88}
+              disabled={placing}
+              onPress={handlePlaceOrder}
+            >
+              {placing ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : hasUnavailableItems ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Feather name="alert-circle" size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
+                  <Text style={styles.checkoutBtnText}>
+                    {hasOutOfStockItems ? t('outOfStock', 'Out of stock') : t('comingSoon', 'Coming Soon')}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.checkoutBtnText}>{t('placeOrder', 'Place Order')}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
 
       {/* Address Selection Modal */}
       <Modal visible={addressModalVisible} transparent animationType="slide">
@@ -1447,6 +1600,47 @@ export const CartScreen = ({ route, navigation }: any) => {
             )}
           </View>
         </View>
+      </Modal>
+
+      {/* Clean Bottom-Sheet Modal for Clear All Confirmation */}
+      <Modal
+        visible={clearModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setClearModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setClearModalVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.clearSheetCard}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.clearTrashIconCircle}>
+              <Feather name="trash-2" size={24} color="#DC2626" />
+            </View>
+            <Text style={styles.clearSheetTitle}>{t('clearCartTitle', 'Clear Shopping Basket?')}</Text>
+            <Text style={styles.clearSheetMsg}>
+              {t('clearCartMsg', 'Are you sure you want to remove all items from your basket?')}
+            </Text>
+            <View style={styles.clearSheetActionsRow}>
+              <TouchableOpacity
+                style={styles.clearSheetCancelBtn}
+                activeOpacity={0.75}
+                onPress={() => setClearModalVisible(false)}
+              >
+                <Text style={styles.clearSheetCancelText}>{t('cancel', 'Cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.clearSheetConfirmBtn}
+                activeOpacity={0.85}
+                onPress={handleConfirmClear}
+              >
+                <Text style={styles.clearSheetConfirmText}>{t('clearAll', 'Clear All')}</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -1579,6 +1773,124 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F8FAFC',
   },
+  itemFlatRowOos: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    marginVertical: 3,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  itemImgOosBadge: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 1,
+  },
+  itemImgOosText: {
+    color: '#FFFFFF',
+    fontSize: 7.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  cartOosTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    marginTop: 3,
+  },
+  cartOosTagText: {
+    color: '#DC2626',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cartSoonTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    marginTop: 3,
+  },
+  cartSoonTagText: {
+    color: '#B45309',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cartLowTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
+    marginTop: 3,
+  },
+  cartLowTagText: {
+    color: '#D97706',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cartRemoveItemBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  cartRemoveItemText: {
+    color: '#DC2626',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  cartOosBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 12,
+    padding: 12,
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  cartOosBannerIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  cartOosBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#991B1B',
+  },
+  cartOosBannerDesc: {
+    fontSize: 11.5,
+    color: '#B91C1C',
+    marginTop: 2,
+    lineHeight: 15,
+  },
   itemImgWrap: {
     width: 52,
     height: 52,
@@ -1630,6 +1942,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#FEE2E2',
+  },
+  cartDirectTrashBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  clearAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderRadius: 6,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  clearAllText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#DC2626',
   },
   stepperContainer: {
     flexDirection: 'row',
@@ -2690,6 +3027,88 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 2,
     maxWidth: 160,
+  },
+  clearSheetCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    paddingBottom: 30,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 20,
+  },
+  sheetHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E2E8F0',
+    marginBottom: 16,
+  },
+  clearTrashIconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  clearSheetTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  clearSheetMsg: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+    paddingHorizontal: 12,
+  },
+  clearSheetActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  clearSheetCancelBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearSheetCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  clearSheetConfirmBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  clearSheetConfirmText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });
 
