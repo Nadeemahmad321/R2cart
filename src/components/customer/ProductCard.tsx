@@ -9,6 +9,7 @@ import { useFavorites } from '../../context/FavoritesContext';
 import { useCart } from '../../context/CartContext';
 import { dataCache } from '../../services/dataCache';
 import { ProductEnquiryModal } from './ProductEnquiryModal';
+import { getDietaryInfo, DietaryInfo } from '../../utils/productDetails';
 
 const { width } = Dimensions.get('window');
 export const PRODUCT_ITEM_WIDTH = (width - 44) / 2;
@@ -24,6 +25,7 @@ interface ProductMediaProps {
   isComingSoon?: boolean;
   deliveryScope?: string;
   orderMode?: string;
+  dietInfo?: DietaryInfo | null;
 }
 
 function optimizeThumb(url?: string | null, targetWidth = 320): string {
@@ -48,6 +50,7 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
   isComingSoon,
   deliveryScope,
   orderMode,
+  dietInfo,
 }) => {
   const { lang, t, tEta } = useLanguage();
   const optimizedUri = useMemo(() => optimizeThumb(imgUri, 320), [imgUri]);
@@ -107,21 +110,27 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
         </View>
       )}
 
-      {/* Bottom Badge Row: Delivery ETA on Left, Backend Rating on Right */}
+      {/* Bottom Badge Row: Dietary tag & ETA on Left, Backend Rating on Right */}
       <View style={styles.badgeRow}>
-        {showInstantEta ? (
-          <View style={styles.deliveryPill}>
-            <Feather name="zap" size={8.5} color="#059669" />
-            <Text style={styles.deliveryPillText}>{displayEta}</Text>
-          </View>
-        ) : isPanIndia ? (
-          <View style={styles.panIndiaPill}>
-            <Feather name="truck" size={8.5} color="#6D28D9" />
-            <Text style={styles.panIndiaPillText}>PAN-INDIA</Text>
-          </View>
-        ) : (
-          <View />
-        )}
+        <View style={styles.badgeLeftRow}>
+          {dietInfo && (
+            <View style={[styles.dietPill, { backgroundColor: dietInfo.bgColor, borderColor: dietInfo.borderColor }]}>
+              <View style={[styles.dietDot, { backgroundColor: dietInfo.dotColor }]} />
+              <Text style={[styles.dietPillText, { color: dietInfo.textColor }]}>{dietInfo.label}</Text>
+            </View>
+          )}
+          {showInstantEta ? (
+            <View style={styles.deliveryPill}>
+              <Feather name="zap" size={8.5} color="#059669" />
+              <Text style={styles.deliveryPillText}>{displayEta}</Text>
+            </View>
+          ) : isPanIndia ? (
+            <View style={styles.panIndiaPill}>
+              <Feather name="truck" size={8.5} color="#6D28D9" />
+              <Text style={styles.panIndiaPillText}>PAN-INDIA</Text>
+            </View>
+          ) : null}
+        </View>
 
         {hasRating && (
           <View style={styles.ratingBadge}>
@@ -192,6 +201,8 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
   const discount = mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0;
   const unit = product.unit || (product.variants && product.variants[0]?.unit) || '1 unit';
   const imgUri = product.imageUrl || product.image || (product.images && product.images[0]);
+  const minOrderQty = Math.max(1, Number(product.minOrderQty) || 1);
+  const dietInfo = useMemo(() => getDietaryInfo(product), [product]);
 
   const handleAddPress = () => {
     if (hasMultiplePacks) {
@@ -226,6 +237,7 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
           isComingSoon={isComingSoon}
           deliveryScope={product.deliveryScope}
           orderMode={product.orderMode}
+          dietInfo={dietInfo}
         />
 
         {/* Product Details with Subtle Line Card Outline */}
@@ -233,12 +245,19 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
           <Text style={styles.productTitle} numberOfLines={2}>
             {tProd(product)}
           </Text>
-          <Text style={styles.productUnitText} numberOfLines={1}>
-            {unit}
-            {hasMultiplePacks ? (
-              <Text style={{ color: Colors.primaryDark, fontWeight: '700' }}> · {packOptions.length} {lang === 'hi' ? 'साइज़' : 'options'}</Text>
-            ) : null}
-          </Text>
+          <View style={styles.unitMetaRow}>
+            <Text style={styles.productUnitText} numberOfLines={1}>
+              {unit}
+              {hasMultiplePacks ? (
+                <Text style={{ color: Colors.primaryDark, fontWeight: '700' }}> · {packOptions.length} {lang === 'hi' ? 'साइज़' : 'options'}</Text>
+              ) : null}
+            </Text>
+            {minOrderQty > 1 && (
+              <View style={styles.minOrderPill}>
+                <Text style={styles.minOrderPillText}>Min {minOrderQty}</Text>
+              </View>
+            )}
+          </View>
 
           <View style={styles.priceRow}>
             <View>
@@ -534,6 +553,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 2,
   },
+  badgeLeftRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3.5,
+    flexShrink: 1,
+  },
+  dietPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4.5,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    borderWidth: 0.5,
+  },
+  dietDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    marginRight: 3,
+  },
+  dietPillText: {
+    fontSize: 8,
+    fontWeight: '800',
+  },
   deliveryPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -611,7 +654,27 @@ const styles = StyleSheet.create({
   productUnitText: {
     fontSize: 10.5,
     color: '#64748B',
-    marginTop: 1,
+    flexShrink: 1,
+  },
+  unitMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+    flexWrap: 'wrap',
+  },
+  minOrderPill: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  minOrderPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#92400E',
   },
   priceRow: {
     flexDirection: 'row',

@@ -50,6 +50,9 @@ export interface Product {
   shippingFee?: number;
   orderMode?: 'DIRECT_ORDER' | 'CONTACT_REQUEST' | 'BOTH' | string;
   estimatedDelivery?: string;
+  minOrderQty?: number;
+  dietaryPreference?: string;
+  specifications?: any;
 }
 
 export interface Category {
@@ -101,6 +104,8 @@ export interface CartItem {
   deliveryScope?: 'LOCAL' | 'PAN_INDIA' | 'CUSTOM' | string;
   orderMode?: 'DIRECT_ORDER' | 'CONTACT_REQUEST' | 'BOTH' | string;
   shippingFee?: number;
+  minOrderQty?: number;
+  dietaryPreference?: string;
 }
 
 export interface Address {

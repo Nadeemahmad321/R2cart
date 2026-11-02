@@ -63,6 +63,8 @@ const mapBackendItemToCartItem = (bi: any, index: number = 0): CartItem => {
     deliveryScope: bi.deliveryScope || bi.product?.deliveryScope || 'LOCAL',
     orderMode: bi.orderMode || bi.product?.orderMode || 'DIRECT_ORDER',
     shippingFee: bi.shippingFee ? Number(bi.shippingFee) : (bi.product?.shippingFee ? Number(bi.product.shippingFee) : undefined),
+    minOrderQty: Math.max(1, Number(bi.minOrderQty || bi.product?.minOrderQty) || 1),
+    dietaryPreference: bi.dietaryPreference || bi.product?.dietaryPreference || undefined,
   };
 };
 
@@ -104,6 +106,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 isSoon: Boolean(i.isSoon),
                 comingSoon: Boolean(i.comingSoon),
                 categorySlug: i.categorySlug,
+                deliveryScope: i.deliveryScope || 'LOCAL',
+                orderMode: i.orderMode || 'DIRECT_ORDER',
+                shippingFee: i.shippingFee ? Number(i.shippingFee) : undefined,
+                minOrderQty: Math.max(1, Number(i.minOrderQty) || 1),
+                dietaryPreference: i.dietaryPreference || undefined,
               }));
             setItems(sanitized);
             itemsRef.current = sanitized;
@@ -233,6 +240,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           deliveryScope: product.deliveryScope || 'LOCAL',
           orderMode: product.orderMode || 'DIRECT_ORDER',
           shippingFee: product.shippingFee ? Number(product.shippingFee) : undefined,
+          minOrderQty: Math.max(1, Number(product.minOrderQty) || 1),
+          dietaryPreference: product.dietaryPreference || undefined,
         };
         newQty = 1;
         nextItems = [...currentItems, newItem];

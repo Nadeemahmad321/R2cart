@@ -26,81 +26,14 @@ import { Skeleton } from '../../components/common/Skeleton';
 import { ProductCard, ProductEnquiryModal } from '../../components/customer';
 import { useFavorites } from '../../context/FavoritesContext';
 import { dataCache } from '../../services/dataCache';
+import {
+  parseProductDetails,
+  getDietaryInfo,
+  ParsedProductDetails,
+  DietaryInfo,
+} from '../../utils/productDetails';
 
 const { width } = Dimensions.get('window');
-
-interface ParsedDetails {
-  summary: string;
-  brand: string;
-  dietaryPreference: string;
-  countryOfOrigin: string;
-  shelfLife: string;
-  storage: string;
-  ingredients: string;
-  keyFeatures: string[];
-}
-
-function parseProductDescription(rawDesc?: string, product?: Product | null): ParsedDetails {
-  const result: ParsedDetails = {
-    summary: '',
-    brand: '',
-    dietaryPreference: '',
-    countryOfOrigin: 'India',
-    shelfLife: '',
-    storage: '',
-    ingredients: '',
-    keyFeatures: [],
-  };
-
-  const text = rawDesc ? String(rawDesc).trim() : '';
-  if (!text) return result;
-
-  // 1. Try parsing JSON format
-  if (text.startsWith('{') && text.endsWith('}')) {
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed.summary) result.summary = parsed.summary;
-      if (parsed.brand) result.brand = parsed.brand;
-      if (parsed.dietaryPreference) result.dietaryPreference = parsed.dietaryPreference;
-      if (parsed.countryOfOrigin) result.countryOfOrigin = parsed.countryOfOrigin;
-      if (parsed.shelfLife) result.shelfLife = parsed.shelfLife;
-      if (parsed.storage) result.storage = parsed.storage;
-      if (parsed.ingredients) result.ingredients = parsed.ingredients;
-      if (Array.isArray(parsed.keyFeatures)) {
-        result.keyFeatures = parsed.keyFeatures.filter(Boolean);
-      }
-      return result;
-    } catch {}
-  }
-
-  // 2. Try parsing Key: Value lines
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const genericLines: string[] = [];
-
-  for (const line of lines) {
-    const lower = line.toLowerCase();
-    if (lower.startsWith('brand:')) {
-      result.brand = line.substring(6).trim();
-    } else if (lower.startsWith('shelf life:') || lower.startsWith('best before:')) {
-      result.shelfLife = line.split(':')[1]?.trim() || '';
-    } else if (lower.startsWith('country of origin:') || lower.startsWith('origin:')) {
-      result.countryOfOrigin = line.split(':')[1]?.trim() || '';
-    } else if (lower.startsWith('storage:') || lower.startsWith('storage instructions:')) {
-      result.storage = line.split(':')[1]?.trim() || '';
-    } else if (lower.startsWith('ingredients:')) {
-      result.ingredients = line.split(':')[1]?.trim() || '';
-    } else if (lower.startsWith('dietary preference:') || lower.startsWith('type:')) {
-      result.dietaryPreference = line.split(':')[1]?.trim() || '';
-    } else if (line.startsWith('-') || line.startsWith('-') || line.startsWith('*')) {
-      result.keyFeatures.push(line.replace(/^[-\-*]\s*/, ''));
-    } else {
-      genericLines.push(line);
-    }
-  }
-
-  result.summary = genericLines.join('\n');
-  return result;
-}
 
 function optimizeImg(url?: string | null, targetWidth = 600): string {
   if (!url || typeof url !== 'string') return '';
@@ -267,8 +200,14 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
 
   // Parse structured specifications from backend description unconditionally
   const details = useMemo(() => {
-    return parseProductDescription(product?.description, product);
+    return parseProductDetails(product?.description, product);
   }, [product?.description, product]);
+
+  const dietInfo = useMemo(() => {
+    return getDietaryInfo(product, details);
+  }, [product, details]);
+
+  const minOrderQty = Math.max(1, Number(product?.minOrderQty) || 1);
 
   const price = selectedVariant ? Number(selectedVariant.price) : Number(product?.price || 0);
   const mrp = selectedVariant
@@ -286,10 +225,14 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
   const isComingSoon = dataCache.isProductComingSoon(product);
   const stock = selectedVariant?.stock !== undefined ? selectedVariant.stock : (product?.stock ?? 10);
   const isOutOfStock = !isComingSoon && (stock <= 0 || product?.status === 'INACTIVE');
-
-  const isVeg = details.dietaryPreference
-    ? details.dietaryPreference.toLowerCase().includes('veg') && !details.dietaryPreference.toLowerCase().includes('non')
-    : true;
+  const hasNutrition = Boolean(
+    details.nutrition &&
+    (details.nutrition.energy ||
+      details.nutrition.protein ||
+      details.nutrition.carbs ||
+      details.nutrition.totalSugars ||
+      details.nutrition.fat)
+  );
 
   if (loading || !product) {
     return (
@@ -388,6 +331,13 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
         {/* Product Details Header Card */}
         <View style={styles.detailSection}>
           <View style={styles.badgeTopRow}>
+            {dietInfo && (
+              <View style={[styles.dietaryPill, { backgroundColor: dietInfo.bgColor, borderColor: dietInfo.borderColor }]}>
+                <View style={[styles.dietaryDot, { backgroundColor: dietInfo.dotColor }]} />
+                <Text style={[styles.dietaryText, { color: dietInfo.textColor }]}>{dietInfo.label}</Text>
+              </View>
+            )}
+
             {product.orderMode !== 'CONTACT_REQUEST' && product.deliveryScope !== 'PAN_INDIA' && (
               <View style={styles.etaPill}>
                 <Feather name="zap" size={12} color={Colors.primaryDark} style={{ marginRight: 4 }} />
@@ -429,7 +379,14 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
           )}
 
           <Text style={styles.titleText}>{tProd(product)}</Text>
-          <Text style={styles.unitText}>{unit}</Text>
+          <View style={styles.unitMetaRow}>
+            <Text style={styles.unitText}>{unit}</Text>
+            {minOrderQty > 1 && (
+              <View style={styles.minOrderPill}>
+                <Text style={styles.minOrderPillText}>Min Order: {minOrderQty}</Text>
+              </View>
+            )}
+          </View>
 
           {/* Price, MRP & Savings Row */}
           <View style={styles.priceRow}>
@@ -516,13 +473,50 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
               </View>
             ) : null}
 
-            <View style={styles.specRow}>
-              <Text style={styles.specLabel}>Dietary</Text>
-              <View style={styles.dietaryPill}>
-                <View style={[styles.dietaryDot, { backgroundColor: isVeg ? '#10B981' : '#EF4444' }]} />
-                <Text style={styles.dietaryText}>{isVeg ? 'Vegetarian' : 'Non-Vegetarian'}</Text>
+            {details.productType ? (
+              <View style={styles.specRow}>
+                <Text style={styles.specLabel}>Product Type</Text>
+                <Text style={styles.specVal}>{details.productType}</Text>
               </View>
-            </View>
+            ) : null}
+
+            {dietInfo ? (
+              <View style={styles.specRow}>
+                <Text style={styles.specLabel}>Dietary</Text>
+                <View style={[styles.dietaryPill, { backgroundColor: dietInfo.bgColor, borderColor: dietInfo.borderColor }]}>
+                  <View style={[styles.dietaryDot, { backgroundColor: dietInfo.dotColor }]} />
+                  <Text style={[styles.dietaryText, { color: dietInfo.textColor }]}>{dietInfo.label}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {details.flavour ? (
+              <View style={styles.specRow}>
+                <Text style={styles.specLabel}>Flavour / Variant</Text>
+                <Text style={styles.specVal}>{details.flavour}</Text>
+              </View>
+            ) : null}
+
+            {details.itemForm ? (
+              <View style={styles.specRow}>
+                <Text style={styles.specLabel}>Item Form</Text>
+                <Text style={styles.specVal}>{details.itemForm}</Text>
+              </View>
+            ) : null}
+
+            {details.weight ? (
+              <View style={styles.specRow}>
+                <Text style={styles.specLabel}>Net Weight</Text>
+                <Text style={styles.specVal}>{details.weight}</Text>
+              </View>
+            ) : null}
+
+            {details.packagingType ? (
+              <View style={styles.specRow}>
+                <Text style={styles.specLabel}>Packaging Type</Text>
+                <Text style={styles.specVal}>{details.packagingType}</Text>
+              </View>
+            ) : null}
 
             {details.shelfLife ? (
               <View style={styles.specRow}>
@@ -546,9 +540,16 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
             ) : null}
 
             {details.ingredients ? (
-              <View style={[styles.specRow, { borderBottomWidth: 0 }]}>
+              <View style={styles.specRow}>
                 <Text style={styles.specLabel}>Ingredients</Text>
                 <Text style={styles.specVal}>{details.ingredients}</Text>
+              </View>
+            ) : null}
+
+            {details.allergens ? (
+              <View style={[styles.specRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.specLabel}>Allergens</Text>
+                <Text style={styles.specVal}>{details.allergens}</Text>
               </View>
             ) : null}
           </View>
@@ -559,10 +560,54 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
               <Text style={styles.subHeading}>Key Highlights</Text>
               {details.keyFeatures.map((feat, idx) => (
                 <View key={idx} style={styles.bulletRow}>
-                  <Text style={styles.bulletDot}>-</Text>
+                  <Text style={styles.bulletDot}>•</Text>
                   <Text style={styles.bulletText}>{feat}</Text>
                 </View>
               ))}
+            </View>
+          )}
+
+          {/* Nutrition Table if present */}
+          {hasNutrition && (
+            <View style={styles.nutritionWrap}>
+              <View style={styles.nutritionHeader}>
+                <Text style={styles.subHeading}>Nutrition Information</Text>
+                {details.nutrition?.servingSize ? (
+                  <Text style={styles.servingSizeText}>{details.nutrition.servingSize}</Text>
+                ) : null}
+              </View>
+              <View style={styles.nutritionGrid}>
+                {details.nutrition?.energy ? (
+                  <View style={styles.nutritionCell}>
+                    <Text style={styles.nutritionVal}>{details.nutrition.energy}</Text>
+                    <Text style={styles.nutritionLabel}>Energy</Text>
+                  </View>
+                ) : null}
+                {details.nutrition?.protein ? (
+                  <View style={styles.nutritionCell}>
+                    <Text style={styles.nutritionVal}>{details.nutrition.protein}</Text>
+                    <Text style={styles.nutritionLabel}>Protein</Text>
+                  </View>
+                ) : null}
+                {details.nutrition?.carbs ? (
+                  <View style={styles.nutritionCell}>
+                    <Text style={styles.nutritionVal}>{details.nutrition.carbs}</Text>
+                    <Text style={styles.nutritionLabel}>Carbs</Text>
+                  </View>
+                ) : null}
+                {details.nutrition?.totalSugars ? (
+                  <View style={styles.nutritionCell}>
+                    <Text style={styles.nutritionVal}>{details.nutrition.totalSugars}</Text>
+                    <Text style={styles.nutritionLabel}>Sugars</Text>
+                  </View>
+                ) : null}
+                {details.nutrition?.fat ? (
+                  <View style={styles.nutritionCell}>
+                    <Text style={styles.nutritionVal}>{details.nutrition.fat}</Text>
+                    <Text style={styles.nutritionLabel}>Fat</Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
           )}
         </View>
@@ -863,8 +908,27 @@ const styles = StyleSheet.create({
   unitText: {
     fontSize: 12.5,
     color: '#64748B',
-    marginTop: 2,
+  },
+  unitMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
     marginBottom: 10,
+    flexWrap: 'wrap',
+  },
+  minOrderPill: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  minOrderPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E',
   },
   priceRow: {
     flexDirection: 'row',
@@ -1029,17 +1093,67 @@ const styles = StyleSheet.create({
   dietaryPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    borderWidth: 0.5,
   },
   dietaryDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   dietaryText: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  nutritionWrap: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 10,
+  },
+  nutritionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  servingSizeText: {
+    fontSize: 11,
     fontWeight: '700',
+    color: '#64748B',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  nutritionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  nutritionCell: {
+    flex: 1,
+    minWidth: 68,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  nutritionVal: {
+    fontSize: 12,
+    fontWeight: '800',
     color: '#0F172A',
+  },
+  nutritionLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
   },
   keyFeaturesWrap: {
     marginTop: 10,

@@ -74,7 +74,7 @@ interface CartItemRowProps {
 }
 
 const CartItemRow = React.memo(({ item, isLast, onUpdateQty, onDelete }: CartItemRowProps) => {
-  const { t, tProd } = useLanguage();
+  const { t, tProd, lang } = useLanguage();
   const [imgError, setImgError] = useState(false);
   const rawImg = item?.imageUrl || '';
   const isValidUrl =
@@ -94,6 +94,8 @@ const CartItemRow = React.memo(({ item, isLast, onUpdateQty, onDelete }: CartIte
   const status = item?.status || cachedProd?.status;
   const isOutOfStock = !isSoon && ((stock !== undefined && stock <= 0) || status === 'INACTIVE');
   const isLowStock = !isSoon && !isOutOfStock && stock !== undefined && stock > 0 && stock < qty;
+  const minOrderQty = Math.max(1, Number(item?.minOrderQty || cachedProd?.minOrderQty) || 1);
+  const isUnderMinQty = !isSoon && !isOutOfStock && minOrderQty > 1 && qty < minOrderQty;
 
   return (
     <View style={[styles.itemFlatRow, isLast && { borderBottomWidth: 0 }, isOutOfStock && styles.itemFlatRowOos]}>
@@ -141,6 +143,17 @@ const CartItemRow = React.memo(({ item, isLast, onUpdateQty, onDelete }: CartIte
             <Feather name="alert-triangle" size={11} color="#D97706" style={{ marginRight: 3.5 }} />
             <Text style={styles.cartLowTagText}>
               Only {stock} left in stock
+            </Text>
+          </View>
+        ) : null}
+
+        {isUnderMinQty ? (
+          <View style={styles.cartMinQtyTag}>
+            <Feather name="alert-circle" size={11} color="#B91C1C" style={{ marginRight: 3.5 }} />
+            <Text style={styles.cartMinQtyTagText}>
+              {lang === 'hi'
+                ? `न्यूनतम ${minOrderQty} यूनिट चाहिए (${minOrderQty - qty} और जोड़ें)`
+                : `Min ${minOrderQty} units required (Add ${minOrderQty - qty} more to order)`}
             </Text>
           </View>
         ) : null}
@@ -557,6 +570,24 @@ export const CartScreen = ({ route, navigation }: any) => {
 
     if (hasComingSoonItems) {
       notify('Some items in your basket are coming soon. Please remove them to proceed.', 'error');
+      return;
+    }
+
+    const underMinQtyItem = validItems.find((p) => {
+      const targetId = String(p.productId || p.id).replace(/_default$/, '').trim();
+      const cached = dataCache.getProductById(targetId);
+      const minQty = Math.max(1, Number(p.minOrderQty || cached?.minOrderQty) || 1);
+      return minQty > 1 && p.quantity < minQty;
+    });
+    if (underMinQtyItem) {
+      const targetId = String(underMinQtyItem.productId || underMinQtyItem.id).replace(/_default$/, '').trim();
+      const cached = dataCache.getProductById(targetId);
+      const minQty = Math.max(1, Number(underMinQtyItem.minOrderQty || cached?.minOrderQty) || 1);
+      const needed = minQty - underMinQtyItem.quantity;
+      notify(
+        `"${underMinQtyItem.name}" requires minimum ${minQty} units to place order. Please add ${needed} more unit${needed > 1 ? 's' : ''}.`,
+        'error'
+      );
       return;
     }
 
@@ -1841,6 +1872,23 @@ const styles = StyleSheet.create({
   },
   cartLowTagText: {
     color: '#D97706',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cartMinQtyTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 0.5,
+    borderColor: '#FECACA',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    marginTop: 3,
+  },
+  cartMinQtyTagText: {
+    color: '#B91C1C',
     fontSize: 10,
     fontWeight: '700',
   },
