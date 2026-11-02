@@ -247,3 +247,4 @@ export function getDietaryInfo(
     textColor: '#065F46',
   };
 }
+

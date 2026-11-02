@@ -149,11 +149,11 @@ const CartItemRow = React.memo(({ item, isLast, onUpdateQty, onDelete }: CartIte
 
         {isUnderMinQty ? (
           <View style={styles.cartMinQtyTag}>
-            <Feather name="alert-circle" size={11} color="#B91C1C" style={{ marginRight: 3.5 }} />
-            <Text style={styles.cartMinQtyTagText}>
+            <Feather name="alert-circle" size={9.5} color="#B91C1C" style={{ marginRight: 3 }} />
+            <Text style={styles.cartMinQtyTagText} numberOfLines={1}>
               {lang === 'hi'
-                ? `न्यूनतम ${minOrderQty} यूनिट चाहिए (${minOrderQty - qty} और जोड़ें)`
-                : `Min ${minOrderQty} units required (Add ${minOrderQty - qty} more to order)`}
+                ? `Min ${minOrderQty} चाहिए (+${minOrderQty - qty})`
+                : `Add ${minOrderQty - qty} more (Min: ${minOrderQty})`}
             </Text>
           </View>
         ) : null}
@@ -172,7 +172,7 @@ const CartItemRow = React.memo(({ item, isLast, onUpdateQty, onDelete }: CartIte
           <Text style={styles.cartRemoveItemText}>{t('remove', 'Remove')}</Text>
         </TouchableOpacity>
       ) : (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <View style={styles.stepperContainer}>
             <TouchableOpacity
               style={styles.stepperBtn}
@@ -1882,15 +1882,18 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: '#FECACA',
     alignSelf: 'flex-start',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 5,
-    marginTop: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    marginTop: 2.5,
+    marginBottom: 2,
+    maxWidth: '100%',
   },
   cartMinQtyTagText: {
     color: '#B91C1C',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
+    flexShrink: 1,
   },
   cartRemoveItemBtn: {
     flexDirection: 'row',
