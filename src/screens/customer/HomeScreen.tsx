@@ -32,6 +32,7 @@ import {
   ProductCardSkeleton,
   Skeleton,
 } from '../../components/common/Skeleton';
+import { EmergencyBanner } from '../../components/common/EmergencyBanner';
 import {
   HeroCarousel,
   ProductCard,
@@ -459,6 +460,11 @@ export const HomeScreen = ({ navigation }: any) => {
     return rails;
   }, [categories, products]);
 
+  // Dynamic Emergency status from backend policies (5 varieties: ALL_ORDERS, STORE_CLOSE, IMMEDIATE_ONLY, SCHEDULED_ONLY, SELECTED_AREAS)
+  const emergencyInfo = useMemo(() => {
+    return dataCache.getEmergencyInfo(currentAddress);
+  }, [currentAddress, storeSettings]);
+
   // Dynamic active storefront sections matching backend Storefront Layout configuration (zero hardcoding)
   const activeSections = useMemo(() => {
     const layout = storeSettings?.policies?.homeLayout || storeSettings?.homeLayout || dataCache.getHomeLayout();
@@ -500,6 +506,9 @@ export const HomeScreen = ({ navigation }: any) => {
   // Header assembling all sections dynamically according to backend layout
   const renderListHeader = useCallback(() => (
     <View>
+      {/* Dynamic Emergency Alert Banner (Driven entirely by backend emergency policies) */}
+      <EmergencyBanner info={emergencyInfo} />
+
       {activeSections.map((section: any, sectionIdx: number) => {
         const secKey = `sec_${section.id || sectionIdx}_${sectionIdx}`;
         switch (section.id) {
@@ -688,6 +697,7 @@ export const HomeScreen = ({ navigation }: any) => {
     addToCart,
     removeFromCart,
     getItemQuantity,
+    emergencyInfo,
     navigation,
     t,
     tCat,
@@ -775,9 +785,40 @@ export const HomeScreen = ({ navigation }: any) => {
             }
           }}
         >
-          <View style={styles.mobileLocEta}>
-            <Feather name="clock" size={12} color="#059669" />
-            <Text style={styles.mobileLocEtaText}>{`${t('deliveryIn')} ${tEta(dataCache.getEstimatedDelivery('20-30 mins'))}`}</Text>
+          <View
+            style={[
+              styles.mobileLocEta,
+              (emergencyInfo.isStorePaused || emergencyInfo.isAreaSuspended) && {
+                backgroundColor: '#FEE2E2',
+                borderColor: '#FECACA',
+              },
+            ]}
+          >
+            <Feather
+              name={emergencyInfo.isStorePaused || emergencyInfo.isAreaSuspended ? 'alert-circle' : 'clock'}
+              size={12}
+              color={emergencyInfo.isStorePaused || emergencyInfo.isAreaSuspended ? '#DC2626' : '#059669'}
+            />
+            <Text
+              style={[
+                styles.mobileLocEtaText,
+                (emergencyInfo.isStorePaused || emergencyInfo.isAreaSuspended) && {
+                  color: '#DC2626',
+                  fontWeight: '700',
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {emergencyInfo.isStorePaused
+                ? emergencyInfo.resumesAtLabel
+                  ? `Paused (${emergencyInfo.resumesAtLabel})`
+                  : 'Paused'
+                : emergencyInfo.isAreaSuspended
+                ? 'Area Suspended'
+                : emergencyInfo.isImmediatePaused
+                ? 'Schedule Only'
+                : `${t('deliveryIn')} ${tEta(dataCache.getEstimatedDelivery('20-30 mins'))}`}
+            </Text>
           </View>
           <View style={styles.mobileLocAddress}>
             {loadingAddresses && !currentAddress ? (

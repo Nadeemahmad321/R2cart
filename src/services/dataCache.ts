@@ -1,5 +1,21 @@
 import { Category, Product } from '../types';
 
+export interface EmergencyInfo {
+  isEmergencyActive: boolean;
+  isStorePaused: boolean;
+  isImmediatePaused: boolean;
+  isScheduledPaused: boolean;
+  isAreaSuspended: boolean;
+  emergencyType: 'ALL_ORDERS' | 'IMMEDIATE_ONLY' | 'SCHEDULED_ONLY' | 'SELECTED_AREAS' | 'STORE_CLOSE' | null;
+  title: string;
+  message: string;
+  resumesAtLabel: string | null;
+  affectedVillageIds: string[];
+  canPlaceOrder: boolean;
+  blockReason?: string;
+  holidayDates: string[];
+}
+
 /**
  * Ultra-fast in-memory cache service.
  * Allows Category & Product screens to render in 0ms (Stale-While-Revalidate).
@@ -142,6 +158,145 @@ class DataCacheService {
 
   getCategories(): Category[] {
     return this.categories;
+  }
+
+  getEmergencyInfo(selectedAddress?: any | null): EmergencyInfo {
+    const s = this.settings || {};
+    const effective = s.effectiveStatus || {};
+    const pause = s.policies?.emergencyPause || {};
+    const emSettings = s.emergencySettings || {};
+    const isOrderPaused = Boolean(s.isOrderPaused);
+
+    const isPausedByPolicy = Boolean(pause.isPaused);
+    const isPausedByEffective =
+      effective.storeStatus === 'EMERGENCY_PAUSED' || Boolean(effective.isEmergencyActive);
+    const isPausedByEmSettings = Boolean(emSettings.isActive);
+
+    const isEmergencyActive =
+      isPausedByPolicy || isPausedByEffective || isPausedByEmSettings || isOrderPaused;
+
+    const rawType =
+      emSettings.type ||
+      effective.emergencyDetails?.type ||
+      (isPausedByPolicy ? 'ALL_ORDERS' : isOrderPaused ? 'ALL_ORDERS' : null);
+
+    const emergencyType:
+      | 'ALL_ORDERS'
+      | 'IMMEDIATE_ONLY'
+      | 'SCHEDULED_ONLY'
+      | 'SELECTED_AREAS'
+      | 'STORE_CLOSE'
+      | null = rawType || (isEmergencyActive ? 'ALL_ORDERS' : null);
+
+    const rawVillages =
+      emSettings.affectedVillageIds || effective.emergencyDetails?.affectedVillageIds || [];
+    const affectedVillageIds: string[] = Array.isArray(rawVillages)
+      ? rawVillages.map((v: any) => String(v).trim().toLowerCase()).filter(Boolean)
+      : [];
+
+    let isAreaSuspended = false;
+    if (isEmergencyActive && emergencyType === 'SELECTED_AREAS' && selectedAddress) {
+      const addrArea = String(selectedAddress.area || '').trim().toLowerCase();
+      const addrVillage = String(
+        selectedAddress.village || selectedAddress.villageName || ''
+      ).trim().toLowerCase();
+      const addrVillageId = String(selectedAddress.villageId || '').trim().toLowerCase();
+      const addrCity = String(selectedAddress.city || '').trim().toLowerCase();
+      const addrPin = String(selectedAddress.pincode || selectedAddress.pin || '').trim();
+
+      isAreaSuspended = affectedVillageIds.some(vId => {
+        if (!vId) return false;
+        return (
+          vId === addrVillageId ||
+          vId === addrArea ||
+          vId === addrVillage ||
+          vId === addrCity ||
+          (addrArea && (vId.includes(addrArea) || addrArea.includes(vId))) ||
+          (addrVillage && (vId.includes(addrVillage) || addrVillage.includes(vId))) ||
+          (addrPin && vId === addrPin)
+        );
+      });
+    }
+
+    const nextOpening = effective.nextAvailableOpening;
+    const rawEndTime =
+      effective.emergencyDetails?.endTime || emSettings.endTime || pause.resumesAt;
+    let resumesAtLabel: string | null = null;
+    if (nextOpening?.label) {
+      resumesAtLabel = String(nextOpening.label).trim();
+    } else if (rawEndTime) {
+      try {
+        const date = new Date(rawEndTime);
+        if (!isNaN(date.getTime())) {
+          resumesAtLabel = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+        }
+      } catch {}
+    }
+
+    const rawReason =
+      effective.statusReason ||
+      effective.emergencyDetails?.message ||
+      emSettings.message ||
+      pause.message ||
+      (pause.reason ? `High order volume (${pause.reason})` : null);
+
+    const message = (rawReason || '').trim() || 'Store operations are temporarily adjusted due to emergency conditions.';
+
+    const isStorePaused =
+      isEmergencyActive &&
+      (emergencyType === 'ALL_ORDERS' ||
+        emergencyType === 'STORE_CLOSE' ||
+        effective.storeStatus === 'EMERGENCY_PAUSED');
+
+    const isImmediatePaused =
+      isStorePaused ||
+      emergencyType === 'IMMEDIATE_ONLY' ||
+      effective.allowImmediateOrders === false;
+
+    const isScheduledPaused =
+      isStorePaused ||
+      emergencyType === 'SCHEDULED_ONLY' ||
+      effective.allowScheduledOrders === false;
+
+    const canPlaceOrder = !isStorePaused && !isAreaSuspended;
+
+    let title = 'Orders Temporarily Paused';
+    if (emergencyType === 'STORE_CLOSE') {
+      title = 'Store Temporarily Closed';
+    } else if (isAreaSuspended) {
+      const areaName = selectedAddress?.village || selectedAddress?.villageName || selectedAddress?.area || 'Your Area';
+      title = `Deliveries Suspended in ${areaName}`;
+    } else if (emergencyType === 'IMMEDIATE_ONLY') {
+      title = 'Instant Delivery Paused';
+    } else if (emergencyType === 'SCHEDULED_ONLY') {
+      title = 'Scheduled Delivery Paused';
+    }
+
+    let blockReason: string | undefined;
+    if (isStorePaused) {
+      blockReason = message || 'We are temporarily not taking new orders. Please check back shortly.';
+    } else if (isAreaSuspended) {
+      const areaName = selectedAddress?.village || selectedAddress?.villageName || selectedAddress?.area || 'your area';
+      blockReason = `Deliveries to ${areaName} are temporarily suspended due to emergency conditions. Please choose another address or check back later.`;
+    }
+
+    const holidayDates = Array.isArray(pause.holidayDates) ? pause.holidayDates : [];
+
+    return {
+      isEmergencyActive,
+      isStorePaused,
+      isImmediatePaused,
+      isScheduledPaused,
+      isAreaSuspended,
+      emergencyType,
+      title,
+      message,
+      resumesAtLabel,
+      affectedVillageIds,
+      canPlaceOrder,
+      blockReason,
+      holidayDates,
+    };
   }
 
   setCategories(cats: Category[]) {

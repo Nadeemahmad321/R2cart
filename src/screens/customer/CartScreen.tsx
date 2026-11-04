@@ -26,6 +26,7 @@ import { api } from '../../services/api';
 import { dataCache } from '../../services/dataCache';
 import { Address, Category } from '../../types';
 import { AddressCardSkeleton, CartScreenSkeleton, Skeleton } from '../../components/common/Skeleton';
+import { EmergencyBanner } from '../../components/common/EmergencyBanner';
 
 const INSTRUCTION_PRESETS = [
   { id: 'no-bell', label: "Don't ring bell", sub: 'Avoid disturbing', icon: 'bell-off' },
@@ -310,6 +311,28 @@ export const CartScreen = ({ route, navigation }: any) => {
       // Keep defaults
     }
   }, [fetchSlots]);
+
+  // Dynamic emergency status derived directly from backend settings & customer's selected address (5 varieties)
+  const emergencyInfo = useMemo(() => {
+    return dataCache.getEmergencyInfo(selectedAddress);
+  }, [selectedAddress, storeSchedule]);
+
+  // Auto-switch delivery mode if current mode is restricted by emergency rules
+  useEffect(() => {
+    if (emergencyInfo.isImmediatePaused && !emergencyInfo.isScheduledPaused && deliveryType === 'INSTANT') {
+      setDeliveryType('SCHEDULED');
+      if (!slots.length) fetchSlots(selectedDate);
+    } else if (emergencyInfo.isScheduledPaused && !emergencyInfo.isImmediatePaused && deliveryType === 'SCHEDULED') {
+      setDeliveryType('INSTANT');
+    }
+  }, [
+    emergencyInfo.isImmediatePaused,
+    emergencyInfo.isScheduledPaused,
+    deliveryType,
+    slots.length,
+    selectedDate,
+    fetchSlots,
+  ]);
 
   // Dynamic backend delivery data (villages, areas, settings)
   const [deliveryData, setDeliveryData] = useState<{
@@ -615,12 +638,48 @@ export const CartScreen = ({ route, navigation }: any) => {
         .filter(Boolean)
         .join(', ');
 
-      if (!deliveryRules.isCourier && deliveryType === 'INSTANT' && !storeSchedule.allowImmediateOrders) {
+      if (!emergencyInfo.canPlaceOrder) {
         notify(
-          storeSchedule.statusReason || 'Store is currently closed for instant delivery. Please select a scheduled delivery slot.',
+          emergencyInfo.blockReason ||
+            emergencyInfo.message ||
+            'Orders are temporarily paused. Please check back later.',
           'error'
         );
-        setDeliveryType('SCHEDULED');
+        setPlacing(false);
+        return;
+      }
+
+      if (
+        !deliveryRules.isCourier &&
+        deliveryType === 'INSTANT' &&
+        (emergencyInfo.isImmediatePaused || !storeSchedule.allowImmediateOrders)
+      ) {
+        notify(
+          emergencyInfo.isImmediatePaused
+            ? 'Instant delivery is temporarily paused due to emergency conditions. Please select a scheduled delivery slot.'
+            : storeSchedule.statusReason ||
+                'Store is currently closed for instant delivery. Please select a scheduled delivery slot.',
+          'error'
+        );
+        if (!emergencyInfo.isScheduledPaused) {
+          setDeliveryType('SCHEDULED');
+        }
+        setPlacing(false);
+        return;
+      }
+
+      if (
+        !deliveryRules.isCourier &&
+        deliveryType === 'SCHEDULED' &&
+        emergencyInfo.isScheduledPaused
+      ) {
+        notify(
+          'Advance scheduled delivery is temporarily paused due to emergency conditions.',
+          'error'
+        );
+        if (!emergencyInfo.isImmediatePaused) {
+          setDeliveryType('INSTANT');
+        }
         setPlacing(false);
         return;
       }
@@ -722,6 +781,12 @@ export const CartScreen = ({ route, navigation }: any) => {
   const renderHeader = useCallback(
     () => (
       <>
+        {/* Dynamic Emergency Alert Banner (Driven entirely by backend emergency policies) */}
+        <EmergencyBanner
+          info={emergencyInfo}
+          containerStyle={{ marginHorizontal: 12, marginTop: 10, marginBottom: 4 }}
+        />
+
         {/* Top Compact Delivery Address Card */}
         <View style={styles.topAddressSection}>
           <View style={styles.topAddressCard}>
@@ -849,9 +914,10 @@ export const CartScreen = ({ route, navigation }: any) => {
               style={[
                 styles.modeOptionBtn,
                 deliveryType === 'INSTANT' && styles.modeOptionBtnActive,
-                !storeSchedule.allowImmediateOrders && styles.modeOptionBtnDisabled,
+                (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) &&
+                  styles.modeOptionBtnDisabled,
               ]}
-              disabled={!storeSchedule.allowImmediateOrders}
+              disabled={!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused}
               activeOpacity={0.85}
               onPress={() => setDeliveryType('INSTANT')}
             >
@@ -859,14 +925,16 @@ export const CartScreen = ({ route, navigation }: any) => {
                 style={[
                   styles.modeIconWrap,
                   deliveryType === 'INSTANT' && styles.modeIconWrapActive,
-                  !storeSchedule.allowImmediateOrders && { backgroundColor: '#F1F5F9' },
+                  (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) && {
+                    backgroundColor: '#F1F5F9',
+                  },
                 ]}
               >
                 <Feather
                   name="zap"
                   size={13}
                   color={
-                    !storeSchedule.allowImmediateOrders
+                    !storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused
                       ? '#94A3B8'
                       : deliveryType === 'INSTANT'
                       ? '#FFFFFF'
@@ -879,7 +947,9 @@ export const CartScreen = ({ route, navigation }: any) => {
                   style={[
                     styles.modeBtnTitle,
                     deliveryType === 'INSTANT' && styles.modeBtnTitleActive,
-                    !storeSchedule.allowImmediateOrders && { color: '#94A3B8' },
+                    (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) && {
+                      color: '#94A3B8',
+                    },
                   ]}
                   numberOfLines={1}
                 >
@@ -889,18 +959,25 @@ export const CartScreen = ({ route, navigation }: any) => {
                   style={[
                     styles.modeBtnSub,
                     deliveryType === 'INSTANT' && styles.modeBtnSubActive,
-                    !storeSchedule.allowImmediateOrders && { color: '#EF4444' },
+                    (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) && {
+                      color: '#EF4444',
+                    },
                   ]}
                   numberOfLines={1}
                 >
-                  {!storeSchedule.allowImmediateOrders ? 'Closed' : deliveryRules.estimatedDelivery || '15-20 mins'}
+                  {emergencyInfo.isImmediatePaused
+                    ? 'Paused'
+                    : !storeSchedule.allowImmediateOrders
+                    ? 'Closed'
+                    : deliveryRules.estimatedDelivery || '15-20 mins'}
                 </Text>
               </View>
               <View
                 style={[
                   styles.radioCircle,
                   deliveryType === 'INSTANT' && styles.radioCircleActive,
-                  !storeSchedule.allowImmediateOrders && styles.radioCircleDisabled,
+                  (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) &&
+                    styles.radioCircleDisabled,
                 ]}
               >
                 {deliveryType === 'INSTANT' && <Feather name="check" size={9} color="#FFFFFF" />}
@@ -911,31 +988,71 @@ export const CartScreen = ({ route, navigation }: any) => {
               style={[
                 styles.modeOptionBtn,
                 deliveryType === 'SCHEDULED' && styles.modeOptionBtnActive,
+                (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) &&
+                  styles.modeOptionBtnDisabled,
               ]}
+              disabled={!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused}
               activeOpacity={0.85}
               onPress={() => {
                 setDeliveryType('SCHEDULED');
                 if (!slots.length) fetchSlots(selectedDate);
               }}
             >
-              <View style={[styles.modeIconWrap, deliveryType === 'SCHEDULED' && styles.modeIconWrapActive]}>
-                <Feather name="calendar" size={13} color={deliveryType === 'SCHEDULED' ? '#FFFFFF' : '#059669'} />
+              <View
+                style={[
+                  styles.modeIconWrap,
+                  deliveryType === 'SCHEDULED' && styles.modeIconWrapActive,
+                  (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) && {
+                    backgroundColor: '#F1F5F9',
+                  },
+                ]}
+              >
+                <Feather
+                  name="calendar"
+                  size={13}
+                  color={
+                    !storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused
+                      ? '#94A3B8'
+                      : deliveryType === 'SCHEDULED'
+                      ? '#FFFFFF'
+                      : '#059669'
+                  }
+                />
               </View>
               <View style={{ flex: 1 }}>
                 <Text
-                  style={[styles.modeBtnTitle, deliveryType === 'SCHEDULED' && styles.modeBtnTitleActive]}
+                  style={[
+                    styles.modeBtnTitle,
+                    deliveryType === 'SCHEDULED' && styles.modeBtnTitleActive,
+                    (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) && {
+                      color: '#94A3B8',
+                    },
+                  ]}
                   numberOfLines={1}
                 >
                   Schedule
                 </Text>
                 <Text
-                  style={[styles.modeBtnSub, deliveryType === 'SCHEDULED' && styles.modeBtnSubActive]}
+                  style={[
+                    styles.modeBtnSub,
+                    deliveryType === 'SCHEDULED' && styles.modeBtnSubActive,
+                    (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) && {
+                      color: '#EF4444',
+                    },
+                  ]}
                   numberOfLines={1}
                 >
-                  Choose Slot
+                  {emergencyInfo.isScheduledPaused ? 'Paused' : 'Choose Slot'}
                 </Text>
               </View>
-              <View style={[styles.radioCircle, deliveryType === 'SCHEDULED' && styles.radioCircleActive]}>
+              <View
+                style={[
+                  styles.radioCircle,
+                  deliveryType === 'SCHEDULED' && styles.radioCircleActive,
+                  (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) &&
+                    styles.radioCircleDisabled,
+                ]}
+              >
                 {deliveryType === 'SCHEDULED' && <Feather name="check" size={9} color="#FFFFFF" />}
               </View>
             </TouchableOpacity>
@@ -1143,6 +1260,7 @@ export const CartScreen = ({ route, navigation }: any) => {
       hasUnavailableItems,
       hasOutOfStockItems,
       fetchSlots,
+      emergencyInfo,
       navigation,
     ]
   );
@@ -1551,13 +1669,24 @@ export const CartScreen = ({ route, navigation }: any) => {
               </View>
 
               <TouchableOpacity
-                style={[styles.checkoutBtn, (placing || hasUnavailableItems) && styles.btnDisabled]}
+                style={[
+                  styles.checkoutBtn,
+                  (placing || hasUnavailableItems || !emergencyInfo.canPlaceOrder) && styles.btnDisabled,
+                  !emergencyInfo.canPlaceOrder && { backgroundColor: '#DC2626' },
+                ]}
                 activeOpacity={0.88}
                 disabled={placing}
                 onPress={handlePlaceOrder}
               >
                 {placing ? (
                   <ActivityIndicator color="#FFFFFF" />
+                ) : !emergencyInfo.canPlaceOrder ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Feather name="slash" size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
+                    <Text style={styles.checkoutBtnText}>
+                      {emergencyInfo.isAreaSuspended ? 'Area Suspended' : 'Orders Paused'}
+                    </Text>
+                  </View>
                 ) : hasUnavailableItems ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Feather name="alert-circle" size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
@@ -1608,9 +1737,15 @@ export const CartScreen = ({ route, navigation }: any) => {
                 }
                 renderItem={({ item }) => {
                   const isSelected = selectedAddress?.id === item.id;
+                  const itemEmInfo = dataCache.getEmergencyInfo(item);
+                  const isSuspended = itemEmInfo.isAreaSuspended;
                   return (
                     <TouchableOpacity
-                      style={[styles.addressItemCard, isSelected && styles.addressItemActive]}
+                      style={[
+                        styles.addressItemCard,
+                        isSelected && styles.addressItemActive,
+                        isSuspended && { borderColor: '#FECACA', backgroundColor: '#FFF5F5' },
+                      ]}
                       onPress={() => {
                         setSelectedAddress(item);
                         setAddressModalVisible(false);
@@ -1625,6 +1760,23 @@ export const CartScreen = ({ route, navigation }: any) => {
                             <View style={styles.addrTagBadge}>
                               <Text style={styles.addrTagText}>{item.type || 'HOME'}</Text>
                             </View>
+                            {isSuspended && (
+                              <View
+                                style={[
+                                  styles.addrTagBadge,
+                                  { backgroundColor: '#FEE2E2', borderColor: '#FECACA' },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.addrTagText,
+                                    { color: '#DC2626', fontWeight: '700' },
+                                  ]}
+                                >
+                                  SUSPENDED
+                                </Text>
+                              </View>
+                            )}
                             <Text style={styles.addrNameText}>
                               {item.name || item.fullName || 'Address'}
                             </Text>
