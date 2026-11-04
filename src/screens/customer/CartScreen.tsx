@@ -561,15 +561,22 @@ export const CartScreen = ({ route, navigation }: any) => {
   const effectiveDeliveryFee = itemTotal >= (freeThreshold || Infinity) ? 0 : Number(deliveryRules?.deliveryFee || 0);
   const finalTotal = Math.max(0, itemTotal + (itemTotal === 0 ? 0 : effectiveDeliveryFee) + tip - discountAmount);
 
-  // Dynamic Out of Stock / Coming Soon check for items in basket
+  // Dynamic Out of Stock / Coming Soon / Insufficient Stock check for items in basket
   const hasOutOfStockItems = useMemo(() => {
     return validItems.some(i => {
       const targetId = String(i.productId || i.id || '').replace(/_default$/, '').trim();
       const cached = dataCache.getProductById(targetId);
       const isSoon = dataCache.isProductComingSoon(cached || i);
-      const stock = i?.stock !== undefined ? Number(i.stock) : (cached?.stock !== undefined ? Number(cached.stock) : undefined);
+      const stock =
+        i?.stock !== undefined
+          ? Number(i.stock)
+          : cached?.stock !== undefined
+          ? Number(cached.stock)
+          : undefined;
       const status = i?.status || cached?.status;
-      return !isSoon && ((stock !== undefined && stock <= 0) || status === 'INACTIVE');
+      const isOos = dataCache.isProductOutOfStock(cached || i, i.variantId ? stock : undefined);
+      const exceeds = stock !== undefined && stock > 0 && i.quantity > stock;
+      return !isSoon && (isOos || exceeds || (stock !== undefined && stock <= 0) || status === 'INACTIVE');
     });
   }, [validItems]);
 

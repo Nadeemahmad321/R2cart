@@ -432,6 +432,10 @@ class ApiService {
     return this.request('/banners');
   }
 
+  async getActiveMarketing() {
+    return this.request('/marketing/active');
+  }
+
   async getBestSellers() {
     return this.request('/homepage/best-sellers');
   }

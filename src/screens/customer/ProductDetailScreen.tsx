@@ -111,7 +111,7 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
                       unit: p.unit,
                       price: p.price || 0,
                       mrp: p.mrp || p.price,
-                      stock: p.stock ?? 10,
+                      stock: p.stock !== undefined ? Number(p.stock) : 0,
                     }));
                     setVariantsList(formattedVariants);
                     const currentVariant = formattedVariants.find(v => v.id === prodData.id) || formattedVariants[0];
@@ -223,8 +223,13 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
 
   // Real stock from backend & Coming Soon status
   const isComingSoon = dataCache.isProductComingSoon(product);
-  const stock = selectedVariant?.stock !== undefined ? selectedVariant.stock : (product?.stock ?? 10);
-  const isOutOfStock = !isComingSoon && (stock <= 0 || product?.status === 'INACTIVE');
+  const stock =
+    selectedVariant?.stock !== undefined
+      ? Number(selectedVariant.stock)
+      : product?.stock !== undefined
+      ? Number(product.stock)
+      : 0;
+  const isOutOfStock = !isComingSoon && dataCache.isProductOutOfStock(product, selectedVariant?.stock);
   const hasNutrition = Boolean(
     details.nutrition &&
     (details.nutrition.energy ||

@@ -214,6 +214,17 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       const existingIndex = currentItems.findIndex(isMatch);
+      const availableStock =
+        v?.stock !== undefined
+          ? Number(v.stock)
+          : product.stock !== undefined
+          ? Number(product.stock)
+          : 999;
+      const currentQty = existingIndex > -1 ? currentItems[existingIndex].quantity : 0;
+      if (currentQty + 1 > availableStock) {
+        notify(`Only ${availableStock} units available in stock`, 'error');
+        return;
+      }
 
       let newQty = 1;
       let nextItems: CartItem[];
@@ -292,6 +303,21 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           : (!item.variantId || item.variantId === 'default');
         return prodMatch && varMatch;
       };
+
+      if (validQty > 0) {
+        const itemToUpdate = currentItems.find(isMatch);
+        const cachedProd = dataCache.getProductById(cleanProdId);
+        const availableStock =
+          itemToUpdate?.stock !== undefined
+            ? Number(itemToUpdate.stock)
+            : cachedProd?.stock !== undefined
+            ? Number(cachedProd.stock)
+            : 999;
+        if (validQty > availableStock) {
+          notify(`Only ${availableStock} units available in stock`, 'error');
+          return;
+        }
+      }
 
       // Optimistic local update
       let nextItems: CartItem[];

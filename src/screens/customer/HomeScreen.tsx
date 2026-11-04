@@ -90,6 +90,7 @@ export const HomeScreen = ({ navigation }: any) => {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [locationModalVisible, setLocationModalVisible] = useState<boolean>(false);
   const [storeSettings, setStoreSettings] = useState<any>(dataCache.getSettings());
+  const [festivalOffers, setFestivalOffers] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [gridDisplayCount, setGridDisplayCount] = useState<number>(20);
@@ -122,7 +123,7 @@ export const HomeScreen = ({ navigation }: any) => {
 
   const fetchData = async () => {
     try {
-      const [catRes, prodRes, bannerRes, bestRes, picksRes, deliveryRes, addrRes, settingsRes] = await Promise.allSettled([
+      const [catRes, prodRes, bannerRes, bestRes, picksRes, deliveryRes, addrRes, settingsRes, mktRes] = await Promise.allSettled([
         api.getCategories(),
         api.getAllProducts(),
         api.getBanners(),
@@ -131,11 +132,16 @@ export const HomeScreen = ({ navigation }: any) => {
         api.getDelivery(),
         user ? api.getAddresses() : Promise.resolve({ data: [] }),
         api.getSettings(),
+        api.getActiveMarketing(),
       ]);
 
       if (settingsRes.status === 'fulfilled' && settingsRes.value?.data) {
         dataCache.setSettings(settingsRes.value.data);
         setStoreSettings(settingsRes.value.data);
+      }
+
+      if (mktRes.status === 'fulfilled' && mktRes.value?.data?.festivalOffers) {
+        setFestivalOffers(mktRes.value.data.festivalOffers);
       }
 
       let prodList: Product[] = [];
@@ -460,15 +466,27 @@ export const HomeScreen = ({ navigation }: any) => {
     return reordered;
   }, [allHeroCandidates, heroRotation]);
 
-  // Campaign offers rail strictly adhering to backend placements (zero hardcoded fallback leaking)
+  // Campaign offers rail strictly adhering to backend placements & active festival promotions
   const campaignBanners = useMemo(() => {
-    return liveBanners.filter((banner, index) => {
+    const promoBanners = (festivalOffers || []).map((f: any, idx: number) => ({
+      id: `fest-${f.id || idx}`,
+      kicker: f.badge || 'FESTIVAL SPECIAL',
+      heading: f.title || f.name,
+      subtitle: f.subtitle || f.content,
+      image: f.imageUrl,
+      destination: f.linkUrl && f.linkUrl !== '/' && f.linkUrl !== '#' ? f.linkUrl : 'Coupons',
+      ctaText: f.metadata?.ctaText || 'Shop festival deals',
+    }));
+
+    const regularBanners = liveBanners.filter((banner, index) => {
       const p = bannerPlacements[banner.id];
       if (p === 'CAMPAIGN' || p === 'BOTH') return true;
       if (p === 'HERO') return false;
       return index >= 2;
     });
-  }, [liveBanners, bannerPlacements]);
+
+    return [...promoBanners, ...regularBanners];
+  }, [liveBanners, bannerPlacements, festivalOffers]);
 
   // Dynamic Category Ordering matching website & Admin Storefront Layout categoryOrder
   const orderedCategories = useMemo(() => {
@@ -958,33 +976,82 @@ export const HomeScreen = ({ navigation }: any) => {
                 backgroundColor: '#FEE2E2',
                 borderColor: '#FECACA',
               },
+              storeSettings?.effectiveStatus?.isOpenNow === false &&
+                !emergencyInfo.isStorePaused && {
+                  backgroundColor: '#FEF3C7',
+                  borderColor: '#FDE68A',
+                },
+              (storeSettings?.effectiveStatus?.allowImmediateOrders === false ||
+                emergencyInfo.isImmediatePaused) &&
+                storeSettings?.effectiveStatus?.isOpenNow !== false &&
+                !emergencyInfo.isStorePaused && {
+                  backgroundColor: '#E0F2FE',
+                  borderColor: '#BAE6FD',
+                },
             ]}
           >
-            <Feather
-              name={emergencyInfo.isStorePaused || emergencyInfo.isAreaSuspended ? 'alert-circle' : 'clock'}
-              size={12}
-              color={emergencyInfo.isStorePaused || emergencyInfo.isAreaSuspended ? '#DC2626' : '#059669'}
-            />
-            <Text
-              style={[
-                styles.mobileLocEtaText,
-                (emergencyInfo.isStorePaused || emergencyInfo.isAreaSuspended) && {
-                  color: '#DC2626',
-                  fontWeight: '700',
-                },
-              ]}
-              numberOfLines={1}
-            >
-              {emergencyInfo.isStorePaused
-                ? emergencyInfo.resumesAtLabel
-                  ? `Paused (${emergencyInfo.resumesAtLabel})`
-                  : 'Paused'
-                : emergencyInfo.isAreaSuspended
-                ? 'Area Suspended'
-                : emergencyInfo.isImmediatePaused
-                ? 'Schedule Only'
-                : `${t('deliveryIn')} ${tEta(dataCache.getEstimatedDelivery('20-30 mins'))}`}
-            </Text>
+            {(() => {
+              const effective = storeSettings?.effectiveStatus || {};
+              const isStoreClosed = effective.isOpenNow === false;
+              const nextOpeningLabel = effective.nextAvailableOpening?.label;
+              const isEmergency = emergencyInfo.isStorePaused || emergencyInfo.isAreaSuspended;
+              const isPaused = emergencyInfo.isStorePaused;
+
+              if (isEmergency) {
+                return (
+                  <>
+                    <Feather name="alert-circle" size={12} color="#DC2626" />
+                    <Text
+                      style={[styles.mobileLocEtaText, { color: '#DC2626', fontWeight: '700' }]}
+                      numberOfLines={1}
+                    >
+                      {isPaused
+                        ? emergencyInfo.resumesAtLabel
+                          ? `Paused (${emergencyInfo.resumesAtLabel})`
+                          : 'Paused'
+                        : 'Area Suspended'}
+                    </Text>
+                  </>
+                );
+              }
+
+              if (isStoreClosed) {
+                return (
+                  <>
+                    <Feather name="moon" size={12} color="#D97706" />
+                    <Text
+                      style={[styles.mobileLocEtaText, { color: '#B45309', fontWeight: '700' }]}
+                      numberOfLines={1}
+                    >
+                      {nextOpeningLabel ? `Closed (${nextOpeningLabel})` : 'Closed'}
+                    </Text>
+                  </>
+                );
+              }
+
+              if (effective.allowImmediateOrders === false || emergencyInfo.isImmediatePaused) {
+                return (
+                  <>
+                    <Feather name="calendar" size={12} color="#0284C7" />
+                    <Text
+                      style={[styles.mobileLocEtaText, { color: '#0369A1', fontWeight: '700' }]}
+                      numberOfLines={1}
+                    >
+                      Schedule Only
+                    </Text>
+                  </>
+                );
+              }
+
+              return (
+                <>
+                  <Feather name="clock" size={12} color="#059669" />
+                  <Text style={styles.mobileLocEtaText} numberOfLines={1}>
+                    {`${t('deliveryIn')} ${tEta(dataCache.getEstimatedDelivery('20-30 mins'))}`}
+                  </Text>
+                </>
+              );
+            })()}
           </View>
           <View style={styles.mobileLocAddress}>
             {loadingAddresses && !currentAddress ? (

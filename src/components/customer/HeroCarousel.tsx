@@ -68,15 +68,9 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = React.memo(({
   const scrollRef = useRef<FlatList>(null);
   const timerRef = useRef<any>(null);
 
-  // Exactly top 2 banners matching the website
+  // Dynamic hero slides strictly from backend banners
   const heroSlides = React.useMemo(() => {
-    if (banners && banners.length >= 2) {
-      return banners.slice(0, 2);
-    }
-    if (banners && banners.length === 1) {
-      return [banners[0], DEFAULT_WEBSITE_HERO[1] as any];
-    }
-    return DEFAULT_WEBSITE_HERO as any[];
+    return Array.isArray(banners) ? banners : [];
   }, [banners]);
 
   useEffect(() => {
@@ -106,6 +100,8 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = React.memo(({
     }
   };
 
+  if (!heroSlides || heroSlides.length === 0) return null;
+
   return (
     <View style={styles.carouselContainer}>
       <FlatList
@@ -126,20 +122,23 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = React.memo(({
         })}
         keyExtractor={(item, i) => item.id || `hero_${i}`}
         renderItem={({ item, index }) => {
-          const isCream = index === 1;
-          const fallback = DEFAULT_WEBSITE_HERO[index % DEFAULT_WEBSITE_HERO.length];
-          const kicker = item.kicker || fallback.kicker;
-          const heading = item.heading || fallback.heading;
-          const subtitle = item.subtitle || fallback.subtitle;
-          const cta = item.ctaText || fallback.ctaText;
-          const mainImg = item.image || fallback.image;
-          const secImg = fallback.secondaryImage;
+          const isCream = item.isCream !== undefined ? Boolean(item.isCream) : index % 2 === 1;
+          const kicker = item.kicker || 'R2CART FRESH';
+          const heading = item.heading || item.title || 'Daily Needs, Delivered Fresh';
+          const subtitle = item.subtitle || item.description || '';
+          const cta = item.ctaText || 'Shop now';
+          const mainImg = item.image || item.imageUrl || '';
+          const secImg = item.secondaryImage || '';
+          const stickerBold = item.stickerBold || (isCream ? '15 Min' : 'Fresh');
+          const stickerSmall = item.stickerSmall || (isCream ? 'delivery' : 'daily');
+          const customBg = item.bg || item.backgroundColor;
 
           return (
             <TouchableOpacity
               style={[
                 styles.heroCard,
                 isCream ? styles.heroCream : styles.heroGreen,
+                customBg ? { backgroundColor: customBg } : null,
               ]}
               activeOpacity={0.92}
               onPress={() => onBannerPress(item)}
@@ -169,12 +168,14 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = React.memo(({
                   {heading}
                 </Text>
 
-                <Text
-                  style={[styles.heroSubtitle, isCream ? styles.subtitleCream : styles.subtitleGreen]}
-                  numberOfLines={1}
-                >
-                  {subtitle}
-                </Text>
+                {subtitle ? (
+                  <Text
+                    style={[styles.heroSubtitle, isCream ? styles.subtitleCream : styles.subtitleGreen]}
+                    numberOfLines={1}
+                  >
+                    {subtitle}
+                  </Text>
+                ) : null}
 
                 <View style={styles.ctaRow}>
                   <View style={[styles.heroCtaBtn, isCream ? styles.ctaBtnCream : styles.ctaBtnGreen]}>
@@ -190,9 +191,11 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = React.memo(({
 
               {/* Right Column: Compact Visual */}
               <View style={styles.heroVisual}>
-                <View style={styles.mainPhotoWrap}>
-                  <Image source={{ uri: optimizeThumb(mainImg, 450) }} style={styles.mainPhotoImg} resizeMode="cover" />
-                </View>
+                {mainImg ? (
+                  <View style={styles.mainPhotoWrap}>
+                    <Image source={{ uri: optimizeThumb(mainImg, 450) }} style={styles.mainPhotoImg} resizeMode="cover" />
+                  </View>
+                ) : null}
 
                 {secImg ? (
                   <View style={styles.floatingProduct}>
@@ -201,8 +204,8 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = React.memo(({
                 ) : null}
 
                 <View style={styles.offerSticker}>
-                  <Text style={styles.offerStickerBold}>{fallback.stickerBold}</Text>
-                  <Text style={styles.offerStickerSmall}>{fallback.stickerSmall}</Text>
+                  <Text style={styles.offerStickerBold}>{stickerBold}</Text>
+                  <Text style={styles.offerStickerSmall}>{stickerSmall}</Text>
                 </View>
               </View>
             </TouchableOpacity>

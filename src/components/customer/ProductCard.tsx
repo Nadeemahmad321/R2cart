@@ -23,6 +23,7 @@ interface ProductMediaProps {
   onToggleFav?: () => void;
   isOutOfStock?: boolean;
   isComingSoon?: boolean;
+  stock?: number;
   deliveryScope?: string;
   orderMode?: string;
   dietInfo?: DietaryInfo | null;
@@ -48,6 +49,7 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
   onToggleFav,
   isOutOfStock,
   isComingSoon,
+  stock,
   deliveryScope,
   orderMode,
   dietInfo,
@@ -72,7 +74,7 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
         </View>
       )}
 
-      {/* Out of Stock / Coming Soon Badge on Media */}
+      {/* Out of Stock / Coming Soon / Low Stock Badge on Media */}
       {isComingSoon ? (
         <View style={styles.soonMediaOverlay}>
           <Feather name="clock" size={9.5} color="#B45309" />
@@ -81,6 +83,10 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
       ) : isOutOfStock ? (
         <View style={styles.outOfStockMediaOverlay}>
           <Text style={styles.outOfStockMediaOverlayText}>{t('outOfStock', 'OUT OF STOCK')}</Text>
+        </View>
+      ) : stock !== undefined && stock > 0 && stock <= 5 ? (
+        <View style={styles.lowStockMediaOverlay}>
+          <Text style={styles.lowStockMediaOverlayText}>{`⚡ ONLY ${stock} LEFT`}</Text>
         </View>
       ) : null}
 
@@ -236,6 +242,7 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
           onToggleFav={() => toggleFavorite(product)}
           isOutOfStock={isOutOfStock}
           isComingSoon={isComingSoon}
+          stock={addedPack?.stock !== undefined ? Number(addedPack.stock) : (product.stock !== undefined ? Number(product.stock) : undefined)}
           deliveryScope={product.deliveryScope}
           orderMode={product.orderMode}
           dietInfo={dietInfo}
@@ -809,6 +816,24 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 8.5,
     fontWeight: '800',
+  },
+  lowStockMediaOverlay: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    zIndex: 3,
+  },
+  lowStockMediaOverlayText: {
+    color: '#B45309',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   outOfStockPill: {
     height: 34,
