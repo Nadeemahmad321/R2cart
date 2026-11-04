@@ -593,19 +593,21 @@ export const HomeScreen = ({ navigation }: any) => {
             return (
               <View key={secKey}>
                 {allCategoryRails.map(({ category, items }, catIdx) => {
+                  if (!category) return null;
+                  const catName = category.name || category.slug || 'Items';
                   const isCatSoon = dataCache.isCategoryComingSoon(category.slug);
                   const backendEta = dataCache.getEstimatedDelivery('20-30 mins');
                   return (
                     <ProductRail
                       key={`cat_rail_${category.id || category.slug || catIdx}_${catIdx}`}
-                      title={category.name}
+                      title={catName}
                       badge={isCatSoon ? (lang === 'hi' ? 'जल्द आएगा' : 'Coming Soon') : undefined}
                       subtitle={
                         isCatSoon
                           ? (lang === 'hi' ? 'जल्द ही आपके लिए उपलब्ध होगा' : 'Opening soon for orders')
                           : (lang === 'hi'
-                              ? `ताज़ा ${tCat(category.name)} • डिलीवरी ${tEta(backendEta)} में`
-                              : `Fresh ${category.name.toLowerCase()} delivered in ${backendEta}`)
+                              ? `ताज़ा ${tCat(catName)} • डिलीवरी ${tEta(backendEta)} में`
+                              : `Fresh ${catName.toLowerCase()} delivered in ${backendEta}`)
                       }
                       products={items}
                       onProductPress={handleProductPress}

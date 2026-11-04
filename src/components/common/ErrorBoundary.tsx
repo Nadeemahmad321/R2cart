@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Platform } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
 
@@ -47,6 +47,13 @@ export class ErrorBoundary extends Component<Props, State> {
           <Text style={styles.subtitle}>
             Something unexpected interrupted this view. Your basket and account are safe.
           </Text>
+          {this.state.error?.message ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText} numberOfLines={3}>
+                {this.state.error.message}
+              </Text>
+            </View>
+          ) : null}
           <TouchableOpacity
             style={styles.actionBtn}
             activeOpacity={0.85}
@@ -94,7 +101,23 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: '#64748B',
     textAlign: 'center',
-    marginBottom: 26,
+    marginBottom: 16,
+  },
+  errorBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 20,
+    maxWidth: '100%',
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#DC2626',
+    textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   actionBtn: {
     flexDirection: 'row',
