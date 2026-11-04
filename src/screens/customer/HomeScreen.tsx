@@ -44,7 +44,7 @@ import {
   PromiseStrip,
   FloatingCartBar,
 } from '../../components/customer';
-import { defaultHomeSections } from '../../config/homeLayout';
+import { normalizeHomeLayout, HomeLayoutConfig, HomeSectionConfig } from '../../config/homeLayout';
 
 const { width } = Dimensions.get('window');
 
@@ -399,14 +399,106 @@ export const HomeScreen = ({ navigation }: any) => {
     }
   }, [navigation]);
 
-  // Derived banner sets matching website: exactly top 2 hero banners
-  const heroBanners = useMemo(() => {
-    return banners.slice(0, 2);
+  // Dynamic Normalized Storefront Layout from backend (zero hardcoding, admin synced)
+  const homeLayout: HomeLayoutConfig = useMemo(() => {
+    return normalizeHomeLayout(
+      storeSettings?.policies?.homeLayout || storeSettings?.homeLayout || dataCache.getHomeLayout()
+    );
+  }, [storeSettings]);
+
+  const bannerPlacements = homeLayout.bannerPlacements || {};
+  const heroRotation = homeLayout.heroRotation || {};
+
+  // Only active live banners from backend
+  const liveBanners = useMemo(() => {
+    return banners.filter(b => !b.status || String(b.status).toUpperCase() === 'ACTIVE');
   }, [banners]);
 
+  // Candidates for Top Hero Banner Carousel based on admin bannerPlacements
+  const allHeroCandidates = useMemo(() => {
+    return liveBanners.filter((banner, index) => {
+      const p = bannerPlacements[banner.id];
+      if (p === 'HERO' || p === 'BOTH') return true;
+      if (p === 'CAMPAIGN') return false;
+      return index < 2;
+    });
+  }, [liveBanners, bannerPlacements]);
+
+  // Dynamic Hero Carousel with 24-hr daily calendar rotation & admin manual override
+  const heroBanners = useMemo(() => {
+    if (allHeroCandidates.length <= 1) return allHeroCandidates;
+
+    const { manualBannerId, manualChangedAt, intervalHours = 24 } = heroRotation;
+    const cycleMs = (Number(intervalHours) || 24) * 60 * 60 * 1000;
+    const now = Date.now();
+
+    let activeIndex = 0;
+
+    if (manualBannerId && manualChangedAt) {
+      const manualTime = new Date(manualChangedAt).getTime();
+      if (!isNaN(manualTime)) {
+        const elapsed = now - manualTime;
+        const manualIdx = allHeroCandidates.findIndex(b => String(b.id) === String(manualBannerId));
+        if (manualIdx !== -1) {
+          if (elapsed >= 0 && elapsed < cycleMs) {
+            activeIndex = manualIdx;
+          } else {
+            const periods = Math.floor(elapsed / cycleMs);
+            activeIndex = (manualIdx + periods) % allHeroCandidates.length;
+          }
+        }
+      }
+    } else {
+      const dayNumber = Math.floor(now / (24 * 60 * 60 * 1000));
+      activeIndex = dayNumber % allHeroCandidates.length;
+    }
+
+    const reordered: Banner[] = [];
+    for (let i = 0; i < allHeroCandidates.length; i++) {
+      reordered.push(allHeroCandidates[(activeIndex + i) % allHeroCandidates.length]);
+    }
+    return reordered;
+  }, [allHeroCandidates, heroRotation]);
+
+  // Campaign offers rail strictly adhering to backend placements (zero hardcoded fallback leaking)
   const campaignBanners = useMemo(() => {
-    return banners.length > 2 ? banners.slice(2) : banners;
-  }, [banners]);
+    return liveBanners.filter((banner, index) => {
+      const p = bannerPlacements[banner.id];
+      if (p === 'CAMPAIGN' || p === 'BOTH') return true;
+      if (p === 'HERO') return false;
+      return index >= 2;
+    });
+  }, [liveBanners, bannerPlacements]);
+
+  // Dynamic Category Ordering matching website & Admin Storefront Layout categoryOrder
+  const orderedCategories = useMemo(() => {
+    if (!homeLayout.categoryOrder?.length) return categories;
+    const orderMap = new Map(
+      homeLayout.categoryOrder.map((slugOrId: string, idx: number) => [slugOrId, idx])
+    );
+    return [...categories].sort((a, b) => {
+      const slugA = a.slug || '';
+      const idA = a.id || '';
+      const posA = orderMap.has(slugA)
+        ? orderMap.get(slugA)!
+        : orderMap.has(idA)
+        ? orderMap.get(idA)!
+        : 999;
+
+      const slugB = b.slug || '';
+      const idB = b.id || '';
+      const posB = orderMap.has(slugB)
+        ? orderMap.get(slugB)!
+        : orderMap.has(idB)
+        ? orderMap.get(idB)!
+        : 999;
+
+      if (posA === posB) {
+        return (Number(a.position) || 999) - (Number(b.position) || 999);
+      }
+      return posA - posB;
+    });
+  }, [categories, homeLayout.categoryOrder]);
 
   // Derived product rails matching website
   const recommendedProducts = useMemo(() => {
@@ -423,13 +515,13 @@ export const HomeScreen = ({ navigation }: any) => {
       .slice(0, 10);
   }, [products]);
 
-  // Category product rails for ALL categories matching the website
+  // Category product rails ordered by admin's categoryOrder
   const allCategoryRails = useMemo(() => {
-    if (categories.length === 0 || products.length === 0) return [];
+    if (orderedCategories.length === 0 || products.length === 0) return [];
     const rails: { category: Category; items: Product[] }[] = [];
     const seenCatKeys = new Set<string>();
 
-    for (const cat of categories) {
+    for (const cat of orderedCategories) {
       if (!cat) continue;
       const catKey = String(cat.id || cat.slug || cat.name || '');
       if (seenCatKeys.has(catKey)) continue;
@@ -453,31 +545,22 @@ export const HomeScreen = ({ navigation }: any) => {
       });
 
       if (catItems.length > 0) {
-        // Render ALL products belonging to that category in the horizontal rail without arbitrary limits
         rails.push({ category: cat, items: catItems });
       }
     }
     return rails;
-  }, [categories, products]);
+  }, [orderedCategories, products]);
 
   // Dynamic Emergency status from backend policies (5 varieties: ALL_ORDERS, STORE_CLOSE, IMMEDIATE_ONLY, SCHEDULED_ONLY, SELECTED_AREAS)
   const emergencyInfo = useMemo(() => {
     return dataCache.getEmergencyInfo(currentAddress);
   }, [currentAddress, storeSettings]);
 
-  // Dynamic active storefront sections matching backend Storefront Layout configuration (zero hardcoding)
+  // Dynamic active storefront sections strictly adhering to admin configuration (order and enabled)
   const activeSections = useMemo(() => {
-    const layout = storeSettings?.policies?.homeLayout || storeSettings?.homeLayout || dataCache.getHomeLayout();
-    const rawSections =
-      Array.isArray(layout?.sections) && layout.sections.length > 0 ? layout.sections : defaultHomeSections;
-    const seen = new Set<string>();
-    const unique = rawSections.filter((s: any) => {
-      if (!s || !s.id || seen.has(s.id)) return false;
-      seen.add(s.id);
-      return s.enabled !== false;
-    });
-    return unique.sort((a: any, b: any) => (Number(a.order) || 0) - (Number(b.order) || 0));
-  }, [storeSettings]);
+    const list = (homeLayout.sections || []).filter(s => s && s.enabled !== false);
+    return [...list].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  }, [homeLayout.sections]);
 
   // Virtualized window for bottom storefront grid to prevent excessive memory consumption
   const displayedGridProducts = useMemo(() => {
@@ -511,13 +594,37 @@ export const HomeScreen = ({ navigation }: any) => {
 
       {activeSections.map((section: any, sectionIdx: number) => {
         const secKey = `sec_${section.id || sectionIdx}_${sectionIdx}`;
+
+        // Section-level Coming Soon card renderer
+        const renderComingSoonCard = () => (
+          <View key={secKey} style={styles.sectionComingSoonCard}>
+            <View style={styles.sectionCsChip}>
+              <Feather name="clock" size={11} color="#B45309" />
+              <Text style={styles.sectionCsChipText}>
+                {section.comingSoonBadge || (lang === 'hi' ? 'जल्द आ रहा है' : 'COMING SOON')}
+              </Text>
+            </View>
+            <Text style={styles.sectionCsTitle}>
+              {section.comingSoonTitle || section.title || (lang === 'hi' ? 'जल्द शुरू हो रहा है' : 'Launching Soon')}
+            </Text>
+            <Text style={styles.sectionCsNotice}>
+              {section.comingSoonNotice ||
+                (lang === 'hi'
+                  ? 'आपके क्षेत्र के लिए इस सेक्शन को तैयार किया जा रहा है।'
+                  : 'We are preparing handpicked merchant deals and fresh items for your area.')}
+            </Text>
+          </View>
+        );
+
         switch (section.id) {
           case 'heroBanners':
+            if (section.comingSoon) return renderComingSoonCard();
             return heroBanners.length > 0 ? (
               <HeroCarousel key={secKey} banners={heroBanners} onBannerPress={handleBannerPress} />
             ) : null;
 
           case 'campaignOffers':
+            if (section.comingSoon) return renderComingSoonCard();
             return campaignBanners.length > 0 ? (
               <CampaignRail
                 key={secKey}
@@ -529,6 +636,7 @@ export const HomeScreen = ({ navigation }: any) => {
             ) : null;
 
           case 'shopCategories':
+            if (section.comingSoon) return renderComingSoonCard();
             return (
               <CategoryGrid
                 key={secKey}
@@ -538,20 +646,23 @@ export const HomeScreen = ({ navigation }: any) => {
                   dataCache.getSettings()?.tagline ||
                   (lang === 'hi' ? 'ताज़ा और शुद्ध रोज़मर्रा का सामान' : 'Everything your home needs')
                 }
-                categories={categories}
+                categories={orderedCategories}
                 onCategoryPress={handleCategoryPress}
               />
             );
 
-          case 'recommended':
-            return recommendedProducts.length > 0 ? (
+          case 'recommended': {
+            if (section.comingSoon) return renderComingSoonCard();
+            const count = Number(section.count) || 10;
+            const items = recommendedProducts.slice(0, count);
+            return items.length > 0 ? (
               <ProductRail
                 key={secKey}
-                title={section.title || 'Recommended for you'}
-                subtitle={section.subtitle || 'Tailored to what you love'}
+                title={section.title || (lang === 'hi' ? 'आपके लिए खास सिफारिशें' : 'Recommended for you')}
+                subtitle={section.subtitle || (lang === 'hi' ? 'आपकी पसंद के अनुसार' : 'Tailored to what you love')}
                 icon="sparkles"
                 iconColor="#10B981"
-                products={recommendedProducts}
+                products={items}
                 onProductPress={handleProductPress}
                 onAddToCart={addToCart}
                 onRemoveFromCart={removeFromCart}
@@ -559,17 +670,24 @@ export const HomeScreen = ({ navigation }: any) => {
                 onSeeAll={() => navigation.navigate('SearchTab')}
               />
             ) : null;
+          }
 
-          case 'bestSellers':
-            return bestSellers.length > 0 ? (
+          case 'bestSellers': {
+            if (section.comingSoon) return renderComingSoonCard();
+            const count = Number(section.count) || 10;
+            const items = bestSellers.slice(0, count);
+            return items.length > 0 ? (
               <ProductRail
                 key={secKey}
-                title={section.title || 'Best sellers'}
-                subtitle={section.subtitle || 'Top selling essentials in your area'}
+                title={section.title || (lang === 'hi' ? 'सबसे ज्यादा बिकने वाले' : 'Best sellers')}
+                subtitle={
+                  section.subtitle ||
+                  (lang === 'hi' ? 'ग्राहकों द्वारा सबसे ज्यादा पसंद' : 'Top selling essentials in your area')
+                }
                 badge="POPULAR"
                 icon="award"
                 iconColor="#F59E0B"
-                products={bestSellers}
+                products={items}
                 onProductPress={handleProductPress}
                 onAddToCart={addToCart}
                 onRemoveFromCart={removeFromCart}
@@ -577,17 +695,21 @@ export const HomeScreen = ({ navigation }: any) => {
                 onSeeAll={() => navigation.navigate('SearchTab', { filter: 'bestseller' })}
               />
             ) : null;
+          }
 
-          case 'topPicks':
-            return topPicks.length > 0 ? (
+          case 'topPicks': {
+            if (section.comingSoon) return renderComingSoonCard();
+            const count = Number(section.count) || 10;
+            const items = topPicks.slice(0, count);
+            return items.length > 0 ? (
               <ProductRail
                 key={secKey}
-                title={section.title || 'Top picks'}
-                subtitle={section.subtitle || 'Handpicked fresh items'}
+                title={section.title || (lang === 'hi' ? 'आज के टॉप पिक्स' : 'Top picks')}
+                subtitle={section.subtitle || (lang === 'hi' ? 'ताज़ा और चुनिंदा सामान' : 'Handpicked fresh items')}
                 badge="10-MIN"
                 icon="zap"
                 iconColor="#059669"
-                products={topPicks}
+                products={items}
                 onProductPress={handleProductPress}
                 onAddToCart={addToCart}
                 onRemoveFromCart={removeFromCart}
@@ -595,21 +717,29 @@ export const HomeScreen = ({ navigation }: any) => {
                 onSeeAll={() => navigation.navigate('SearchTab', { filter: 'toppicks' })}
               />
             ) : null;
+          }
 
           case 'promoStrip':
+            if (section.comingSoon) return renderComingSoonCard();
             return (
               <PromoStrip
                 key={secKey}
-                tag={section.tag || 'YOUR SAVINGS'}
-                title={section.title || 'Stock up. Save more.'}
-                subtitle={section.subtitle || 'Explore the current coupons and exclusive discounts for your basket.'}
-                buttonText={section.buttonText || 'Explore offers'}
+                tag={section.tag || (lang === 'hi' ? 'आपकी बचत' : 'YOUR SAVINGS')}
+                title={section.title || (lang === 'hi' ? 'खरीदें ज्यादा · बचाएं ज्यादा' : 'Stock up. Save more.')}
+                subtitle={
+                  section.subtitle ||
+                  (lang === 'hi'
+                    ? 'अपनी कार्ट के लिए कूपन और विशेष छूट देखें।'
+                    : 'Explore the current coupons and exclusive discounts for your basket.')
+                }
+                buttonText={section.buttonText || (lang === 'hi' ? 'ऑफ़र्स देखें' : 'Explore offers')}
                 onPress={() => navigation.navigate('Coupons')}
               />
             );
 
           case 'categoryRails': {
-            const maxCats = Number(section.maxCategories) || 6;
+            if (section.comingSoon) return renderComingSoonCard();
+            const maxCats = Number(section.maxCategories) || 8;
             const railsToRender = allCategoryRails.slice(0, maxCats);
             return (
               <View key={secKey}>
@@ -618,10 +748,15 @@ export const HomeScreen = ({ navigation }: any) => {
                   const catName = category.name || category.slug || 'Items';
                   const isCatSoon = dataCache.isCategoryComingSoon(category.slug);
                   const backendEta = dataCache.getEstimatedDelivery('20-30 mins');
+                  const railTitle =
+                    category.badgeActive && category.badgeText
+                      ? `${tCat(catName)} · ${category.badgeText}`
+                      : tCat(catName);
+
                   return (
                     <ProductRail
                       key={`cat_rail_${category.id || category.slug || catIdx}_${catIdx}`}
-                      title={catName}
+                      title={railTitle}
                       badge={isCatSoon ? (lang === 'hi' ? 'जल्द आएगा' : 'Coming Soon') : undefined}
                       subtitle={
                         isCatSoon
@@ -643,16 +778,22 @@ export const HomeScreen = ({ navigation }: any) => {
             );
           }
 
-          case 'specialOffers':
-            return specialOffers.length > 0 ? (
+          case 'specialOffers': {
+            if (section.comingSoon) return renderComingSoonCard();
+            const count = Number(section.count) || 10;
+            const items = specialOffers.slice(0, count);
+            return items.length > 0 ? (
               <ProductRail
                 key={secKey}
-                title={section.title || 'Special offers'}
-                subtitle={section.subtitle || 'Save big with minimum 15% discount'}
+                title={section.title || (lang === 'hi' ? 'खास ऑफर्स' : 'Special offers')}
+                subtitle={
+                  section.subtitle ||
+                  (lang === 'hi' ? 'कम से कम 15% छूट के साथ बड़ी बचत' : 'Save big with minimum 15% discount')
+                }
                 badge="DEALS"
                 icon="tag"
                 iconColor="#DC2626"
-                products={specialOffers}
+                products={items}
                 onProductPress={handleProductPress}
                 onAddToCart={addToCart}
                 onRemoveFromCart={removeFromCart}
@@ -660,6 +801,31 @@ export const HomeScreen = ({ navigation }: any) => {
                 onSeeAll={() => navigation.navigate('SearchTab', { filter: 'discount' })}
               />
             ) : null;
+          }
+
+          case 'recentlyViewed': {
+            if (section.comingSoon) return renderComingSoonCard();
+            const count = Number(section.count) || 8;
+            const items = products.slice(8, 8 + count);
+            return items.length > 0 ? (
+              <ProductRail
+                key={secKey}
+                title={section.title || (lang === 'hi' ? 'हाल ही में देखे गए' : 'Recently viewed')}
+                subtitle={
+                  section.subtitle ||
+                  (lang === 'hi' ? 'अपनी पसंदीदा चीजें आसानी से दोहराएं' : 'Products explored by you')
+                }
+                icon="clock"
+                iconColor="#3B82F6"
+                products={items}
+                onProductPress={handleProductPress}
+                onAddToCart={addToCart}
+                onRemoveFromCart={removeFromCart}
+                getItemQuantity={getItemQuantity}
+                onSeeAll={() => navigation.navigate('SearchTab')}
+              />
+            ) : null;
+          }
 
           case 'promise':
             return <PromiseStrip key={secKey} />;
@@ -684,7 +850,7 @@ export const HomeScreen = ({ navigation }: any) => {
     lang,
     heroBanners,
     campaignBanners,
-    categories,
+    orderedCategories,
     recommendedProducts,
     bestSellers,
     topPicks,
@@ -1431,5 +1597,42 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '800',
+  },
+  sectionComingSoonCard: {
+    marginHorizontal: 16,
+    marginVertical: 10,
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  sectionCsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 8,
+    gap: 4,
+  },
+  sectionCsChipText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
+    letterSpacing: 0.5,
+  },
+  sectionCsTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#78350F',
+    marginBottom: 4,
+  },
+  sectionCsNotice: {
+    fontSize: 12,
+    color: '#92400E',
+    lineHeight: 17,
   },
 });

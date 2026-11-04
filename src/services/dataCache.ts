@@ -1,4 +1,5 @@
 import { Category, Product } from '../types';
+import { normalizeHomeLayout, HomeLayoutConfig } from '../config/homeLayout';
 
 export interface EmergencyInfo {
   isEmergencyActive: boolean;
@@ -65,8 +66,9 @@ class DataCacheService {
     return defaultEta;
   }
 
-  getHomeLayout(): any {
-    return this.settings?.policies?.homeLayout || this.settings?.homeLayout || null;
+  getHomeLayout(): HomeLayoutConfig {
+    const raw = this.settings?.policies?.homeLayout || this.settings?.homeLayout || null;
+    return normalizeHomeLayout(raw);
   }
 
   isSectionEnabled(sectionId: string, defaultEnabled = true): boolean {
