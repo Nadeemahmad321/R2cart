@@ -390,6 +390,23 @@ class ApiService {
     return this.request(`/products${qs}`);
   }
 
+  async getAllProducts(params?: { category?: string; search?: string }) {
+    try {
+      const rows: any[] = [];
+      let page = 1;
+      let batch: any[] = [];
+      do {
+        const res = await this.getProducts({ ...params, page, limit: 100 });
+        batch = Array.isArray(res?.data) ? res.data : [];
+        rows.push(...batch);
+        page++;
+      } while (batch.length === 100 && page <= 10);
+      return { data: rows, success: true };
+    } catch {
+      return this.getProducts({ ...params, limit: 100 });
+    }
+  }
+
   async getProduct(id: string) {
     return this.request(`/products/${id}`);
   }

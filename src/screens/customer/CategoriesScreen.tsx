@@ -170,7 +170,7 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
     if (!isSilent) setLoadingProds(true);
 
     try {
-      const res = await api.getProducts({ category: slug, limit: 50 });
+      const res = await api.getProducts({ category: slug, limit: 100 });
       // Guard against race conditions: only update state if user is still on THIS category
       if (activeCategorySlugRef.current === slug && res.data) {
         const list = Array.isArray(res.data) ? res.data : [];

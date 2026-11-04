@@ -49,6 +49,24 @@ class DataCacheService {
     return defaultEta;
   }
 
+  getHomeLayout(): any {
+    return this.settings?.policies?.homeLayout || this.settings?.homeLayout || null;
+  }
+
+  isSectionEnabled(sectionId: string, defaultEnabled = true): boolean {
+    const layout = this.getHomeLayout();
+    if (!layout || !Array.isArray(layout.sections)) return defaultEnabled;
+    const sec = layout.sections.find((s: any) => s && s.id === sectionId);
+    if (!sec) return defaultEnabled;
+    return sec.enabled !== false;
+  }
+
+  getSectionConfig(sectionId: string): any {
+    const layout = this.getHomeLayout();
+    if (!layout || !Array.isArray(layout.sections)) return null;
+    return layout.sections.find((s: any) => s && s.id === sectionId) || null;
+  }
+
   isProductComingSoon(product: any): boolean {
     if (!product) return false;
     const layout = this.settings?.policies?.homeLayout || this.settings?.homeLayout || this.settings || {};

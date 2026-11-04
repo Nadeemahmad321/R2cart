@@ -43,6 +43,7 @@ import {
   PromiseStrip,
   FloatingCartBar,
 } from '../../components/customer';
+import { defaultHomeSections } from '../../config/homeLayout';
 
 const { width } = Dimensions.get('window');
 
@@ -87,6 +88,7 @@ export const HomeScreen = ({ navigation }: any) => {
   const [availableVillages, setAvailableVillages] = useState<string[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [locationModalVisible, setLocationModalVisible] = useState<boolean>(false);
+  const [storeSettings, setStoreSettings] = useState<any>(dataCache.getSettings());
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
@@ -120,7 +122,7 @@ export const HomeScreen = ({ navigation }: any) => {
     try {
       const [catRes, prodRes, bannerRes, bestRes, picksRes, deliveryRes, addrRes, settingsRes] = await Promise.allSettled([
         api.getCategories(),
-        api.getProducts({ limit: 50 }),
+        api.getAllProducts(),
         api.getBanners(),
         api.getBestSellers(),
         api.getTopPicks(),
@@ -131,6 +133,7 @@ export const HomeScreen = ({ navigation }: any) => {
 
       if (settingsRes.status === 'fulfilled' && settingsRes.value?.data) {
         dataCache.setSettings(settingsRes.value.data);
+        setStoreSettings(settingsRes.value.data);
       }
 
       let prodList: Product[] = [];
@@ -404,11 +407,22 @@ export const HomeScreen = ({ navigation }: any) => {
           (typeof p.category === 'string' && (p.category === cat.slug || p.category === cat.name || p.category === cat.id))
       );
       if (catItems.length > 0) {
-        rails.push({ category: cat, items: catItems.slice(0, 8) });
+        // Render ALL products belonging to that category in the horizontal rail without arbitrary limits
+        rails.push({ category: cat, items: catItems });
       }
     }
     return rails;
   }, [categories, products]);
+
+  // Dynamic active storefront sections matching backend Storefront Layout configuration (zero hardcoding)
+  const activeSections = useMemo(() => {
+    const layout = storeSettings?.policies?.homeLayout || storeSettings?.homeLayout || dataCache.getHomeLayout();
+    const rawSections = Array.isArray(layout?.sections) && layout.sections.length > 0
+      ? layout.sections
+      : defaultHomeSections;
+    const list = rawSections.filter((s: any) => s && s.enabled !== false);
+    return [...list].sort((a: any, b: any) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  }, [storeSettings]);
 
   // Storefront main grid item renderer - clean and high-performance
   const renderProductItem = useCallback(
@@ -425,128 +439,162 @@ export const HomeScreen = ({ navigation }: any) => {
     [getItemQuantity, addToCart, removeFromCart, handleProductPress]
   );
 
-  // Header assembling all sections in sequence
+  // Header assembling all sections dynamically according to backend layout
   const renderListHeader = useCallback(() => (
     <View>
-      {/* #1. Top Hero Banners Carousel */}
-      <HeroCarousel banners={heroBanners} onBannerPress={handleBannerPress} />
+      {activeSections.map((section: any) => {
+        switch (section.id) {
+          case 'heroBanners':
+            return heroBanners.length > 0 ? (
+              <HeroCarousel key="heroBanners" banners={heroBanners} onBannerPress={handleBannerPress} />
+            ) : null;
 
-      {/* #2. Offers Picked for You (Campaign Rail) */}
-      {campaignBanners.length > 0 && (
-        <CampaignRail
-          title="Offers picked for you"
-          subtitle="Fresh deals, updated from R2Cart"
-          banners={campaignBanners}
-          onBannerPress={handleBannerPress}
-        />
-      )}
+          case 'campaignOffers':
+            return campaignBanners.length > 0 ? (
+              <CampaignRail
+                key="campaignOffers"
+                title={section.title || (lang === 'hi' ? 'आपके लिए खास ऑफर्स' : 'Offers picked for you')}
+                subtitle={section.subtitle || (lang === 'hi' ? 'ताज़ा डील्स और बचत' : 'Fresh deals, updated from R2Cart')}
+                banners={campaignBanners}
+                onBannerPress={handleBannerPress}
+              />
+            ) : null;
 
-      {/* #3. Shop by Category (4-Column Responsive Grid) */}
-      <CategoryGrid
-        title={t('shopByCategory')}
-        subtitle={dataCache.getSettings()?.tagline || (lang === 'hi' ? 'ताज़ा और शुद्ध रोज़मर्रा का सामान' : 'Everything your home needs')}
-        categories={categories}
-        onCategoryPress={handleCategoryPress}
-      />
+          case 'shopCategories':
+            return (
+              <CategoryGrid
+                key="shopCategories"
+                title={section.title || t('shopByCategory')}
+                subtitle={
+                  section.subtitle ||
+                  dataCache.getSettings()?.tagline ||
+                  (lang === 'hi' ? 'ताज़ा और शुद्ध रोज़मर्रा का सामान' : 'Everything your home needs')
+                }
+                categories={categories}
+                onCategoryPress={handleCategoryPress}
+              />
+            );
 
-      {/* #4. Recommended for You Rail */}
-      {recommendedProducts.length > 0 && (
-        <ProductRail
-          title="Recommended for you"
-          subtitle="Tailored to what you love"
-          icon="sparkles"
-          iconColor="#10B981"
-          products={recommendedProducts}
-          onProductPress={handleProductPress}
-          onAddToCart={addToCart}
-          onRemoveFromCart={removeFromCart}
-          getItemQuantity={getItemQuantity}
-          onSeeAll={() => navigation.navigate('SearchTab')}
-        />
-      )}
+          case 'recommended':
+            return recommendedProducts.length > 0 ? (
+              <ProductRail
+                key="recommended"
+                title={section.title || 'Recommended for you'}
+                subtitle={section.subtitle || 'Tailored to what you love'}
+                icon="sparkles"
+                iconColor="#10B981"
+                products={recommendedProducts}
+                onProductPress={handleProductPress}
+                onAddToCart={addToCart}
+                onRemoveFromCart={removeFromCart}
+                getItemQuantity={getItemQuantity}
+                onSeeAll={() => navigation.navigate('SearchTab')}
+              />
+            ) : null;
 
-      {/* #5. Best Sellers Rail */}
-      {bestSellers.length > 0 && (
-        <ProductRail
-          title="Best sellers"
-          subtitle="Top selling essentials in your area"
-          badge="POPULAR"
-          icon="award"
-          iconColor="#F59E0B"
-          products={bestSellers}
-          onProductPress={handleProductPress}
-          onAddToCart={addToCart}
-          onRemoveFromCart={removeFromCart}
-          getItemQuantity={getItemQuantity}
-          onSeeAll={() => navigation.navigate('SearchTab', { filter: 'bestseller' })}
-        />
-      )}
+          case 'bestSellers':
+            return bestSellers.length > 0 ? (
+              <ProductRail
+                key="bestSellers"
+                title={section.title || 'Best sellers'}
+                subtitle={section.subtitle || 'Top selling essentials in your area'}
+                badge="POPULAR"
+                icon="award"
+                iconColor="#F59E0B"
+                products={bestSellers}
+                onProductPress={handleProductPress}
+                onAddToCart={addToCart}
+                onRemoveFromCart={removeFromCart}
+                getItemQuantity={getItemQuantity}
+                onSeeAll={() => navigation.navigate('SearchTab', { filter: 'bestseller' })}
+              />
+            ) : null;
 
-      {/* #6. Top Picks Rail */}
-      {topPicks.length > 0 && (
-        <ProductRail
-          title="Top picks"
-          subtitle="Handpicked fresh items"
-          badge="10-MIN"
-          icon="zap"
-          iconColor="#059669"
-          products={topPicks}
-          onProductPress={handleProductPress}
-          onAddToCart={addToCart}
-          onRemoveFromCart={removeFromCart}
-          getItemQuantity={getItemQuantity}
-          onSeeAll={() => navigation.navigate('SearchTab', { filter: 'toppicks' })}
-        />
-      )}
+          case 'topPicks':
+            return topPicks.length > 0 ? (
+              <ProductRail
+                key="topPicks"
+                title={section.title || 'Top picks'}
+                subtitle={section.subtitle || 'Handpicked fresh items'}
+                badge="10-MIN"
+                icon="zap"
+                iconColor="#059669"
+                products={topPicks}
+                onProductPress={handleProductPress}
+                onAddToCart={addToCart}
+                onRemoveFromCart={removeFromCart}
+                getItemQuantity={getItemQuantity}
+                onSeeAll={() => navigation.navigate('SearchTab', { filter: 'toppicks' })}
+              />
+            ) : null;
 
-      {/* #7. Savings Promo Strip */}
-      <PromoStrip
-        tag="YOUR SAVINGS"
-        title="Stock up. Save more."
-        subtitle="Explore the current coupons and exclusive discounts for your basket."
-        buttonText="Explore offers"
-        onPress={() => navigation.navigate('Coupons')}
-      />
+          case 'promoStrip':
+            return (
+              <PromoStrip
+                key="promoStrip"
+                tag={section.tag || 'YOUR SAVINGS'}
+                title={section.title || 'Stock up. Save more.'}
+                subtitle={section.subtitle || 'Explore the current coupons and exclusive discounts for your basket.'}
+                buttonText={section.buttonText || 'Explore offers'}
+                onPress={() => navigation.navigate('Coupons')}
+              />
+            );
 
-      {/* #8. Category Product Rails for ALL categories (Dairy, Atta, Fruits, etc. dynamically) */}
-      {allCategoryRails.map(({ category, items }) => {
-        const isCatSoon = dataCache.isCategoryComingSoon(category.slug);
-        const backendEta = dataCache.getEstimatedDelivery('20-30 mins');
-        return (
-          <ProductRail
-            key={`cat_rail_${category.id || category.slug}`}
-            title={category.name}
-            badge={isCatSoon ? (lang === 'hi' ? 'जल्द आएगा' : 'Coming Soon') : undefined}
-            subtitle={isCatSoon ? (lang === 'hi' ? 'जल्द ही आपके लिए उपलब्ध होगा' : 'Opening soon for orders') : (lang === 'hi' ? `ताज़ा ${tCat(category.name)} • डिलीवरी ${tEta(backendEta)} में` : `Fresh ${category.name.toLowerCase()} delivered in ${backendEta}`)}
-            products={items}
-            onProductPress={handleProductPress}
-            onAddToCart={addToCart}
-            onRemoveFromCart={removeFromCart}
-            getItemQuantity={getItemQuantity}
-            onSeeAll={() => handleCategoryPress(category)}
-          />
-        );
+          case 'categoryRails':
+            return (
+              <View key="categoryRails">
+                {allCategoryRails.map(({ category, items }) => {
+                  const isCatSoon = dataCache.isCategoryComingSoon(category.slug);
+                  const backendEta = dataCache.getEstimatedDelivery('20-30 mins');
+                  return (
+                    <ProductRail
+                      key={`cat_rail_${category.id || category.slug}`}
+                      title={category.name}
+                      badge={isCatSoon ? (lang === 'hi' ? 'जल्द आएगा' : 'Coming Soon') : undefined}
+                      subtitle={
+                        isCatSoon
+                          ? (lang === 'hi' ? 'जल्द ही आपके लिए उपलब्ध होगा' : 'Opening soon for orders')
+                          : (lang === 'hi'
+                              ? `ताज़ा ${tCat(category.name)} • डिलीवरी ${tEta(backendEta)} में`
+                              : `Fresh ${category.name.toLowerCase()} delivered in ${backendEta}`)
+                      }
+                      products={items}
+                      onProductPress={handleProductPress}
+                      onAddToCart={addToCart}
+                      onRemoveFromCart={removeFromCart}
+                      getItemQuantity={getItemQuantity}
+                      onSeeAll={() => handleCategoryPress(category)}
+                    />
+                  );
+                })}
+              </View>
+            );
+
+          case 'specialOffers':
+            return specialOffers.length > 0 ? (
+              <ProductRail
+                key="specialOffers"
+                title={section.title || 'Special offers'}
+                subtitle={section.subtitle || 'Save big with minimum 15% discount'}
+                badge="DEALS"
+                icon="tag"
+                iconColor="#DC2626"
+                products={specialOffers}
+                onProductPress={handleProductPress}
+                onAddToCart={addToCart}
+                onRemoveFromCart={removeFromCart}
+                getItemQuantity={getItemQuantity}
+                onSeeAll={() => navigation.navigate('SearchTab', { filter: 'discount' })}
+              />
+            ) : null;
+
+          case 'promise':
+            return <PromiseStrip key="promise" />;
+
+          default:
+            return null;
+        }
       })}
-
-      {/* #9. Special Offers Rail (High Discounts) */}
-      {specialOffers.length > 0 && (
-        <ProductRail
-          title="Special offers"
-          subtitle="Save big with minimum 15% discount"
-          badge="DEALS"
-          icon="tag"
-          iconColor="#DC2626"
-          products={specialOffers}
-          onProductPress={handleProductPress}
-          onAddToCart={addToCart}
-          onRemoveFromCart={removeFromCart}
-          getItemQuantity={getItemQuantity}
-          onSeeAll={() => navigation.navigate('SearchTab', { filter: 'discount' })}
-        />
-      )}
-
-      {/* #10. Quality & Delivery Promise */}
-      <PromiseStrip />
 
       {/* Storefront Section Header */}
       <View style={styles.storefrontHeader}>
@@ -559,6 +607,7 @@ export const HomeScreen = ({ navigation }: any) => {
       </View>
     </View>
   ), [
+    activeSections,
     lang,
     heroBanners,
     campaignBanners,
@@ -576,6 +625,9 @@ export const HomeScreen = ({ navigation }: any) => {
     removeFromCart,
     getItemQuantity,
     navigation,
+    t,
+    tCat,
+    tEta,
   ]);
 
   return (

@@ -59,15 +59,6 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
     [getItemQuantity, onAddToCart, onRemoveFromCart, onProductPress]
   );
 
-  const getItemLayout = React.useCallback(
-    (_: any, index: number) => ({
-      length: 154,
-      offset: 154 * index,
-      index,
-    }),
-    []
-  );
-
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -104,11 +95,10 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
         keyExtractor={(item) => `rail_${item.id}`}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        initialNumToRender={4}
-        maxToRenderPerBatch={4}
-        windowSize={3}
-        getItemLayout={getItemLayout}
-        removeClippedSubviews={Platform.OS === 'android'}
+        initialNumToRender={8}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews={false}
         renderItem={renderItem}
       />
     </View>

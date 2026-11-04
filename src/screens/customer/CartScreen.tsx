@@ -530,10 +530,13 @@ export const CartScreen = ({ route, navigation }: any) => {
   };
 
   // Dynamic free delivery calculation from backend settings
-  const diffForFree = Math.max(0, deliveryRules.freeDeliveryThreshold - itemTotal);
-  const freePercent = Math.min(100, Math.round((itemTotal / deliveryRules.freeDeliveryThreshold) * 100));
-  const effectiveDeliveryFee = itemTotal >= deliveryRules.freeDeliveryThreshold ? 0 : deliveryRules.deliveryFee;
-  const finalTotal = Math.max(0, itemTotal + effectiveDeliveryFee + tip - discountAmount);
+  const freeThreshold = Number(deliveryRules?.freeDeliveryThreshold || 0);
+  const diffForFree = Math.max(0, freeThreshold - itemTotal);
+  const freePercent = freeThreshold > 0
+    ? Math.min(100, Math.max(0, Math.round((itemTotal / freeThreshold) * 100)))
+    : 100;
+  const effectiveDeliveryFee = itemTotal >= (freeThreshold || Infinity) ? 0 : Number(deliveryRules?.deliveryFee || 0);
+  const finalTotal = Math.max(0, itemTotal + (itemTotal === 0 ? 0 : effectiveDeliveryFee) + tip - discountAmount);
 
   // Dynamic Out of Stock / Coming Soon check for items in basket
   const hasOutOfStockItems = useMemo(() => {
@@ -1073,7 +1076,7 @@ export const CartScreen = ({ route, navigation }: any) => {
             </View>
           </View>
           <View style={styles.progressBarTrack}>
-            <View style={[styles.progressBarFill, { width: `${freePercent}%` }]} />
+            <View style={[styles.progressBarFill, { width: `${Number.isFinite(freePercent) ? freePercent : 0}%` }]} />
           </View>
         </View>
 
@@ -1377,7 +1380,100 @@ export const CartScreen = ({ route, navigation }: any) => {
     ]
   );
 
-  // --- FILLED CART STATE (FLAT QUICK COMMERCE LAYOUT - NO HEAVY CARDS) ---
+  const renderEmptyCart = useCallback(() => {
+    const estDelivery =
+      typeof deliveryRules?.estimatedDelivery === 'string' && deliveryRules.estimatedDelivery.trim()
+        ? deliveryRules.estimatedDelivery.trim()
+        : '20-30 mins';
+
+    return (
+      <View style={[styles.emptyScrollContent, { alignItems: 'center', width: '100%' }]}>
+        {/* Hero Bag Glow */}
+        <View style={styles.emptyBagCircle}>
+          <Feather name="shopping-bag" size={38} color="#FFFFFF" />
+        </View>
+
+        {/* Dynamic ETA Pill */}
+        <View style={styles.emptyEtaPill}>
+          <Feather name="zap" size={12} color="#059669" />
+          <Text style={styles.emptyEtaText}>{t('deliveryIn', 'Delivery in')} {estDelivery}</Text>
+        </View>
+
+        <Text style={styles.emptyTitle}>{t('emptyCart', 'Your basket is empty')}</Text>
+        <Text style={styles.emptySub}>
+          {t('emptyCartSub', 'Explore fresh fruits, vegetables, dairy & daily grocery essentials delivered fast to your doorstep.')}
+        </Text>
+
+        <TouchableOpacity
+          style={styles.shopNowBtn}
+          activeOpacity={0.88}
+          onPress={() => navigation.navigate('MainTabs')}
+        >
+          <Text style={styles.shopNowText}>{t('startShopping', 'Start Shopping')}</Text>
+          <Feather name="arrow-right" size={15} color="#FFFFFF" style={{ marginLeft: 6 }} />
+        </TouchableOpacity>
+
+        {/* Popular Categories from Backend */}
+        {Array.isArray(categories) && categories.length > 0 && (
+          <View style={styles.emptyCategoriesWrap}>
+            <Text style={styles.emptySectionHeading}>{t('popularCategories', 'Popular Categories')}</Text>
+            <View style={styles.emptyCatGrid}>
+              {categories.filter(c => c && (c.id || c.slug || c.name)).map(cat => {
+                const catImg = (cat as any).image || cat.imageUrl;
+                const hasImg = typeof catImg === 'string' && catImg.startsWith('http');
+                return (
+                  <TouchableOpacity
+                    key={String(cat.id || cat.slug || Math.random())}
+                    style={styles.emptyCatChip}
+                    onPress={() =>
+                      navigation.navigate('MainTabs', {
+                        screen: 'CategoriesTab',
+                        params: {
+                          categoryId: cat.id,
+                          categorySlug: cat.slug,
+                          categoryName: cat.name,
+                        },
+                      })
+                    }
+                  >
+                    {hasImg ? (
+                      <Image source={{ uri: catImg }} style={styles.emptyCatImg} resizeMode="contain" />
+                    ) : (
+                      <Feather name="grid" size={14} color={Colors.primaryDark} />
+                    )}
+                    <Text style={styles.emptyCatName} numberOfLines={1}>
+                      {tCat(cat.name || '')}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Quality Assurance Strip */}
+        <View style={styles.trustStrip}>
+          <View style={styles.trustCol}>
+            <Feather name="zap" size={17} color="#059669" />
+            <Text style={styles.trustTitle}>{estDelivery}</Text>
+            <Text style={styles.trustSub}>Lightning Fast</Text>
+          </View>
+          <View style={[styles.trustCol, styles.trustColMiddle]}>
+            <Feather name="check-circle" size={17} color="#059669" />
+            <Text style={styles.trustTitle}>100% Fresh</Text>
+            <Text style={styles.trustSub}>Quality Checked</Text>
+          </View>
+          <View style={styles.trustCol}>
+            <Feather name="shield" size={17} color="#059669" />
+            <Text style={styles.trustTitle}>Safe Delivery</Text>
+            <Text style={styles.trustSub}>Hygienic Packing</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }, [categories, deliveryRules, navigation, t, tCat]);
+
+  // --- CART STATE (FLAT QUICK COMMERCE LAYOUT - NO HEAVY CARDS) ---
   return (
     <View style={styles.container}>
       {/* Sleek Top Header with Single Clean Back Button */}
@@ -1402,114 +1498,24 @@ export const CartScreen = ({ route, navigation }: any) => {
         <View style={{ flex: 1 }}>
           <CartScreenSkeleton />
         </View>
-      ) : validItems.length === 0 ? (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.emptyScrollContent, { paddingBottom: 40 + insets.bottom }]}
-          refreshControl={
-            <RefreshControl
-              refreshing={pullRefreshing}
-              onRefresh={onPullRefresh}
-              tintColor={Colors.primary}
-              colors={[Colors.primary]}
-            />
-          }
-        >
-          {/* Hero Bag Glow */}
-          <View style={styles.emptyBagCircle}>
-            <Feather name="shopping-bag" size={38} color="#FFFFFF" />
-          </View>
-
-          {/* Dynamic ETA Pill */}
-          <View style={styles.emptyEtaPill}>
-            <Feather name="zap" size={12} color="#059669" />
-            <Text style={styles.emptyEtaText}>{t('deliveryIn', 'Delivery in')} {deliveryRules.estimatedDelivery}</Text>
-          </View>
-
-          <Text style={styles.emptyTitle}>{t('emptyCart', 'Your basket is empty')}</Text>
-          <Text style={styles.emptySub}>
-            {t('emptyCartSub', 'Explore fresh fruits, vegetables, dairy & daily grocery essentials delivered fast to your doorstep.')}
-          </Text>
-
-          <TouchableOpacity
-            style={styles.shopNowBtn}
-            activeOpacity={0.88}
-            onPress={() => navigation.navigate('MainTabs')}
-          >
-            <Text style={styles.shopNowText}>{t('startShopping', 'Start Shopping')}</Text>
-            <Feather name="arrow-right" size={15} color="#FFFFFF" style={{ marginLeft: 6 }} />
-          </TouchableOpacity>
-
-          {/* Popular Categories from Backend */}
-          {categories.length > 0 && (
-            <View style={styles.emptyCategoriesWrap}>
-              <Text style={styles.emptySectionHeading}>{t('popularCategories', 'Popular Categories')}</Text>
-              <View style={styles.emptyCatGrid}>
-                {categories.map(cat => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={styles.emptyCatChip}
-                    onPress={() =>
-                      navigation.navigate('MainTabs', {
-                        screen: 'CategoriesTab',
-                        params: {
-                          categoryId: cat.id,
-                          categorySlug: cat.slug,
-                          categoryName: cat.name,
-                        },
-                      })
-                    }
-                  >
-                    {cat.imageUrl && typeof cat.imageUrl === 'string' && cat.imageUrl.startsWith('http') ? (
-                      <Image source={{ uri: cat.imageUrl }} style={styles.emptyCatImg} resizeMode="contain" />
-                    ) : (
-                      <Feather name="grid" size={14} color={Colors.primaryDark} />
-                    )}
-                    <Text style={styles.emptyCatName} numberOfLines={1}>
-                      {tCat(cat.name)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* Quality Assurance Strip */}
-          <View style={styles.trustStrip}>
-            <View style={styles.trustCol}>
-              <Feather name="zap" size={17} color="#059669" />
-              <Text style={styles.trustTitle}>{deliveryRules.estimatedDelivery}</Text>
-              <Text style={styles.trustSub}>Lightning Fast</Text>
-            </View>
-            <View style={[styles.trustCol, styles.trustColMiddle]}>
-              <Feather name="check-circle" size={17} color="#059669" />
-              <Text style={styles.trustTitle}>100% Fresh</Text>
-              <Text style={styles.trustSub}>Quality Checked</Text>
-            </View>
-            <View style={styles.trustCol}>
-              <Feather name="shield" size={17} color="#059669" />
-              <Text style={styles.trustTitle}>Safe Delivery</Text>
-              <Text style={styles.trustSub}>Hygienic Packing</Text>
-            </View>
-          </View>
-        </ScrollView>
       ) : (
         <>
           <FlatList
             data={validItems}
             keyExtractor={keyExtractor}
             renderItem={renderCartItem}
-            ListHeaderComponent={renderHeader}
-            ListFooterComponent={renderFooter}
+            ListEmptyComponent={renderEmptyCart}
+            ListHeaderComponent={validItems.length > 0 ? renderHeader : undefined}
+            ListFooterComponent={validItems.length > 0 ? renderFooter : undefined}
             contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: 120 + insets.bottom },
+              validItems.length === 0 ? styles.emptyScrollContent : styles.scrollContent,
+              { paddingBottom: (validItems.length === 0 ? 40 : 120) + insets.bottom },
             ]}
             showsVerticalScrollIndicator={false}
             initialNumToRender={8}
             maxToRenderPerBatch={10}
             windowSize={7}
-            removeClippedSubviews={Platform.OS === 'android'}
+            removeClippedSubviews={false}
             refreshControl={
               <RefreshControl
                 refreshing={pullRefreshing}
@@ -1520,49 +1526,51 @@ export const CartScreen = ({ route, navigation }: any) => {
             }
           />
 
-          {/* Docked Sticky Bottom Bar */}
-          <View style={[styles.bottomBar, { paddingBottom: Math.max(14, insets.bottom + 8) }]}>
-            <View>
-              <Text style={styles.bottomTotalText}>₹{finalTotal}</Text>
-              <View style={styles.bottomSubRow}>
-                {deliveryType === 'SCHEDULED' ? (
-                  <>
-                    <Feather name="calendar" size={11} color="#059669" style={{ marginRight: 4 }} />
-                    <Text style={styles.bottomItemsCount} numberOfLines={1}>
-                      {selectedSlot ? `Scheduled: ${selectedSlot.label || selectedDate}` : 'Scheduled Delivery'}
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Feather name="zap" size={11} color="#059669" style={{ marginRight: 4 }} />
-                    <Text style={styles.bottomItemsCount}>
-                      Instant Delivery ({deliveryRules.estimatedDelivery})
-                    </Text>
-                  </>
-                )}
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={[styles.checkoutBtn, (placing || hasUnavailableItems) && styles.btnDisabled]}
-              activeOpacity={0.88}
-              disabled={placing}
-              onPress={handlePlaceOrder}
-            >
-              {placing ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : hasUnavailableItems ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Feather name="alert-circle" size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
-                  <Text style={styles.checkoutBtnText}>
-                    {hasOutOfStockItems ? t('outOfStock', 'Out of stock') : t('comingSoon', 'Coming Soon')}
-                  </Text>
+          {/* Docked Sticky Bottom Bar (only rendered when items exist in basket) */}
+          {validItems.length > 0 && (
+            <View style={[styles.bottomBar, { paddingBottom: Math.max(14, insets.bottom + 8) }]}>
+              <View>
+                <Text style={styles.bottomTotalText}>₹{finalTotal}</Text>
+                <View style={styles.bottomSubRow}>
+                  {deliveryType === 'SCHEDULED' ? (
+                    <>
+                      <Feather name="calendar" size={11} color="#059669" style={{ marginRight: 4 }} />
+                      <Text style={styles.bottomItemsCount} numberOfLines={1}>
+                        {selectedSlot ? `Scheduled: ${selectedSlot.label || selectedDate}` : 'Scheduled Delivery'}
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Feather name="zap" size={11} color="#059669" style={{ marginRight: 4 }} />
+                      <Text style={styles.bottomItemsCount}>
+                        Instant Delivery ({typeof deliveryRules?.estimatedDelivery === 'string' ? deliveryRules.estimatedDelivery : '20-30 mins'})
+                      </Text>
+                    </>
+                  )}
                 </View>
-              ) : (
-                <Text style={styles.checkoutBtnText}>{t('placeOrder', 'Place Order')}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.checkoutBtn, (placing || hasUnavailableItems) && styles.btnDisabled]}
+                activeOpacity={0.88}
+                disabled={placing}
+                onPress={handlePlaceOrder}
+              >
+                {placing ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : hasUnavailableItems ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Feather name="alert-circle" size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
+                    <Text style={styles.checkoutBtnText}>
+                      {hasOutOfStockItems ? t('outOfStock', 'Out of stock') : t('comingSoon', 'Coming Soon')}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.checkoutBtnText}>{t('placeOrder', 'Place Order')}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </>
       )}
 
