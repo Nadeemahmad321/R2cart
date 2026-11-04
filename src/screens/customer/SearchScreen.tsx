@@ -301,9 +301,9 @@ export const SearchScreen = ({ navigation, route }: any) => {
                 <Text style={styles.sectionHeading}>Explore Categories</Text>
               </View>
               <View style={styles.catGrid}>
-                {categories.map(cat => (
+                {categories.map((cat, idx) => (
                   <TouchableOpacity
-                    key={cat.id}
+                    key={`${cat.id || cat.slug || 'cat'}_${idx}`}
                     style={styles.catChip}
                     onPress={() =>
                       navigation.navigate('CategoriesTab', {
@@ -346,7 +346,7 @@ export const SearchScreen = ({ navigation, route }: any) => {
         <FlatList
           data={results}
           renderItem={renderProductItem}
-          keyExtractor={item => item.id}
+          keyExtractor={(item, idx) => `${item.id || 'prod'}_${idx}`}
           numColumns={2}
           columnWrapperStyle={{ gap: 10, marginBottom: 10 }}
           contentContainerStyle={[styles.resultsList, { paddingBottom: 110 + insets.bottom }]}

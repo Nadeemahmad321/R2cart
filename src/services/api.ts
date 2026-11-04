@@ -393,12 +393,18 @@ class ApiService {
   async getAllProducts(params?: { category?: string; search?: string }) {
     try {
       const rows: any[] = [];
+      const seenIds = new Set<string>();
       let page = 1;
       let batch: any[] = [];
       do {
         const res = await this.getProducts({ ...params, page, limit: 100 });
         batch = Array.isArray(res?.data) ? res.data : [];
-        rows.push(...batch);
+        for (const item of batch) {
+          if (item && item.id && !seenIds.has(item.id)) {
+            seenIds.add(item.id);
+            rows.push(item);
+          }
+        }
         page++;
       } while (batch.length === 100 && page <= 10);
       return { data: rows, success: true };

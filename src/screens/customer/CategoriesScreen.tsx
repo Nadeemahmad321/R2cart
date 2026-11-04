@@ -173,7 +173,13 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
       const res = await api.getProducts({ category: slug, limit: 100 });
       // Guard against race conditions: only update state if user is still on THIS category
       if (activeCategorySlugRef.current === slug && res.data) {
-        const list = Array.isArray(res.data) ? res.data : [];
+        const rawList = Array.isArray(res.data) ? res.data : [];
+        const seen = new Set<string>();
+        const list = rawList.filter(p => {
+          if (!p || !p.id || seen.has(p.id)) return false;
+          seen.add(p.id);
+          return true;
+        });
         dataCache.setProductsByCategory(slug, list);
         setProducts(list);
         prefetchTranslations(list);
@@ -302,8 +308,8 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
     [getItemQuantity, addToCart, removeFromCart, handleProductPress]
   );
 
-  const categoryKeyExtractor = useCallback((item: Category) => item.id, []);
-  const productKeyExtractor = useCallback((item: Product) => item.id, []);
+  const categoryKeyExtractor = useCallback((item: Category, index: number) => `${item.id || item.slug || 'cat'}_${index}`, []);
+  const productKeyExtractor = useCallback((item: Product, index: number) => `${item.id || 'prod'}_${index}`, []);
 
   return (
     <View style={styles.container}>

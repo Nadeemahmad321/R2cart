@@ -92,7 +92,7 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
       <FlatList
         horizontal
         data={products}
-        keyExtractor={(item) => `rail_${item.id}`}
+        keyExtractor={(item, index) => `rail_${item.id || 'itm'}_${index}`}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         initialNumToRender={8}

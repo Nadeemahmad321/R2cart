@@ -702,7 +702,7 @@ export const CartScreen = ({ route, navigation }: any) => {
   };
 
   const keyExtractor = useCallback((item: any, index: number) => {
-    return String(item?.id || item?.productId || index);
+    return `${item?.id || item?.productId || 'cart_item'}_${index}`;
   }, []);
 
   const renderCartItem = useCallback(
@@ -1593,7 +1593,7 @@ export const CartScreen = ({ route, navigation }: any) => {
             ) : (
               <FlatList
                 data={addresses}
-                keyExtractor={item => item.id}
+                keyExtractor={(item, index) => `${item.id || 'addr'}_${index}`}
                 ListFooterComponent={
                   <TouchableOpacity
                     style={styles.modalAddAddressBtn}

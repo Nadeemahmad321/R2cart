@@ -420,11 +420,11 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
           <View style={styles.fluidSection}>
             <Text style={styles.sectionHeading}>{t('selectPackSize', 'Select Pack Size')}</Text>
             <View style={styles.variantChipsWrap}>
-              {variantsList.map((v) => {
+              {variantsList.map((v, vIdx) => {
                 const isSelected = selectedVariant?.id === v.id;
                 return (
                   <TouchableOpacity
-                    key={v.id}
+                    key={`${v.id || 'var'}_${vIdx}`}
                     style={[styles.variantChip, isSelected && styles.variantChipActive]}
                     onPress={() => setSelectedVariant(v)}
                     activeOpacity={0.7}
@@ -641,7 +641,7 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
             <FlatList
               horizontal
               data={relatedProducts}
-              keyExtractor={(item) => item.id}
+              keyExtractor={(item, idx) => `${item.id || 'rel'}_${idx}`}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 10, paddingVertical: 4 }}
               renderItem={({ item }) => (

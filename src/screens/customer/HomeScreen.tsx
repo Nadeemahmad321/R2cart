@@ -138,20 +138,39 @@ export const HomeScreen = ({ navigation }: any) => {
 
       let prodList: Product[] = [];
       if (prodRes.status === 'fulfilled' && prodRes.value?.data) {
-        prodList = Array.isArray(prodRes.value.data) ? prodRes.value.data.filter(p => p && p.id) : [];
+        const rawProds = Array.isArray(prodRes.value.data) ? prodRes.value.data : [];
+        const seenProd = new Set<string>();
+        prodList = rawProds.filter(p => {
+          if (!p || !p.id || seenProd.has(p.id)) return false;
+          seenProd.add(p.id);
+          return true;
+        });
         setProducts(prodList);
         dataCache.populateFromProducts(prodList);
       }
 
       let catList: any[] = [];
       if (catRes.status === 'fulfilled' && catRes.value?.data) {
-        catList = Array.isArray(catRes.value.data) ? catRes.value.data.filter(c => c && c.id) : [];
+        const rawCats = Array.isArray(catRes.value.data) ? catRes.value.data : [];
+        const seenCat = new Set<string>();
+        catList = rawCats.filter(c => {
+          const key = c?.id || c?.slug;
+          if (!key || seenCat.has(key)) return false;
+          seenCat.add(key);
+          return true;
+        });
         setCategories(catList);
         dataCache.setCategories(catList);
       }
 
       if (bannerRes.status === 'fulfilled' && bannerRes.value?.data) {
-        const bList = Array.isArray(bannerRes.value.data) ? bannerRes.value.data.filter(b => b && b.id) : [];
+        const rawBanners = Array.isArray(bannerRes.value.data) ? bannerRes.value.data : [];
+        const seenBanners = new Set<string>();
+        const bList = rawBanners.filter(b => {
+          if (!b || !b.id || seenBanners.has(b.id)) return false;
+          seenBanners.add(b.id);
+          return true;
+        });
         setBanners(bList);
       }
 
@@ -167,7 +186,12 @@ export const HomeScreen = ({ navigation }: any) => {
       if (bestList.length === 0 && prodList.length > 0) {
         bestList = prodList.filter(p => p && (p.bestSeller || p.featured)).slice(0, 10);
       }
-      setBestSellers(bestList.filter(p => p && p.id));
+      const seenBest = new Set<string>();
+      setBestSellers(bestList.filter(p => {
+        if (!p || !p.id || seenBest.has(p.id)) return false;
+        seenBest.add(p.id);
+        return true;
+      }));
 
       // Top Picks
       let picksList: Product[] = [];
@@ -178,7 +202,12 @@ export const HomeScreen = ({ navigation }: any) => {
       if (picksList.length === 0 && prodList.length > 0) {
         picksList = prodList.slice(0, 10);
       }
-      setTopPicks(picksList.filter(p => p && p.id));
+      const seenPicks = new Set<string>();
+      setTopPicks(picksList.filter(p => {
+        if (!p || !p.id || seenPicks.has(p.id)) return false;
+        seenPicks.add(p.id);
+        return true;
+      }));
 
       // Dynamic delivery areas and villages from backend (Zero hardcoding)
       let dynamicVillages: string[] = [];
@@ -396,16 +425,31 @@ export const HomeScreen = ({ navigation }: any) => {
   const allCategoryRails = useMemo(() => {
     if (categories.length === 0 || products.length === 0) return [];
     const rails: { category: Category; items: Product[] }[] = [];
+    const seenCatKeys = new Set<string>();
 
     for (const cat of categories) {
-      const catItems = products.filter(
-        p =>
+      if (!cat) continue;
+      const catKey = String(cat.id || cat.slug || cat.name || '');
+      if (seenCatKeys.has(catKey)) continue;
+      seenCatKeys.add(catKey);
+
+      const seenProdIds = new Set<string>();
+      const catItems = products.filter(p => {
+        if (!p || !p.id || seenProdIds.has(p.id)) return false;
+        const match =
           (p as any).categoryId === cat.id ||
           (p as any).category?.id === cat.id ||
           (p as any).categorySlug === cat.slug ||
           (p as any).category?.slug === cat.slug ||
-          (typeof p.category === 'string' && (p.category === cat.slug || p.category === cat.name || p.category === cat.id))
-      );
+          (typeof p.category === 'string' &&
+            (p.category === cat.slug || p.category === cat.name || p.category === cat.id));
+        if (match) {
+          seenProdIds.add(p.id);
+          return true;
+        }
+        return false;
+      });
+
       if (catItems.length > 0) {
         // Render ALL products belonging to that category in the horizontal rail without arbitrary limits
         rails.push({ category: cat, items: catItems });
@@ -417,11 +461,15 @@ export const HomeScreen = ({ navigation }: any) => {
   // Dynamic active storefront sections matching backend Storefront Layout configuration (zero hardcoding)
   const activeSections = useMemo(() => {
     const layout = storeSettings?.policies?.homeLayout || storeSettings?.homeLayout || dataCache.getHomeLayout();
-    const rawSections = Array.isArray(layout?.sections) && layout.sections.length > 0
-      ? layout.sections
-      : defaultHomeSections;
-    const list = rawSections.filter((s: any) => s && s.enabled !== false);
-    return [...list].sort((a: any, b: any) => (Number(a.order) || 0) - (Number(b.order) || 0));
+    const rawSections =
+      Array.isArray(layout?.sections) && layout.sections.length > 0 ? layout.sections : defaultHomeSections;
+    const seen = new Set<string>();
+    const unique = rawSections.filter((s: any) => {
+      if (!s || !s.id || seen.has(s.id)) return false;
+      seen.add(s.id);
+      return s.enabled !== false;
+    });
+    return unique.sort((a: any, b: any) => (Number(a.order) || 0) - (Number(b.order) || 0));
   }, [storeSettings]);
 
   // Storefront main grid item renderer - clean and high-performance
@@ -442,17 +490,18 @@ export const HomeScreen = ({ navigation }: any) => {
   // Header assembling all sections dynamically according to backend layout
   const renderListHeader = useCallback(() => (
     <View>
-      {activeSections.map((section: any) => {
+      {activeSections.map((section: any, sectionIdx: number) => {
+        const secKey = `sec_${section.id || sectionIdx}_${sectionIdx}`;
         switch (section.id) {
           case 'heroBanners':
             return heroBanners.length > 0 ? (
-              <HeroCarousel key="heroBanners" banners={heroBanners} onBannerPress={handleBannerPress} />
+              <HeroCarousel key={secKey} banners={heroBanners} onBannerPress={handleBannerPress} />
             ) : null;
 
           case 'campaignOffers':
             return campaignBanners.length > 0 ? (
               <CampaignRail
-                key="campaignOffers"
+                key={secKey}
                 title={section.title || (lang === 'hi' ? 'आपके लिए खास ऑफर्स' : 'Offers picked for you')}
                 subtitle={section.subtitle || (lang === 'hi' ? 'ताज़ा डील्स और बचत' : 'Fresh deals, updated from R2Cart')}
                 banners={campaignBanners}
@@ -463,7 +512,7 @@ export const HomeScreen = ({ navigation }: any) => {
           case 'shopCategories':
             return (
               <CategoryGrid
-                key="shopCategories"
+                key={secKey}
                 title={section.title || t('shopByCategory')}
                 subtitle={
                   section.subtitle ||
@@ -478,7 +527,7 @@ export const HomeScreen = ({ navigation }: any) => {
           case 'recommended':
             return recommendedProducts.length > 0 ? (
               <ProductRail
-                key="recommended"
+                key={secKey}
                 title={section.title || 'Recommended for you'}
                 subtitle={section.subtitle || 'Tailored to what you love'}
                 icon="sparkles"
@@ -495,7 +544,7 @@ export const HomeScreen = ({ navigation }: any) => {
           case 'bestSellers':
             return bestSellers.length > 0 ? (
               <ProductRail
-                key="bestSellers"
+                key={secKey}
                 title={section.title || 'Best sellers'}
                 subtitle={section.subtitle || 'Top selling essentials in your area'}
                 badge="POPULAR"
@@ -513,7 +562,7 @@ export const HomeScreen = ({ navigation }: any) => {
           case 'topPicks':
             return topPicks.length > 0 ? (
               <ProductRail
-                key="topPicks"
+                key={secKey}
                 title={section.title || 'Top picks'}
                 subtitle={section.subtitle || 'Handpicked fresh items'}
                 badge="10-MIN"
@@ -531,7 +580,7 @@ export const HomeScreen = ({ navigation }: any) => {
           case 'promoStrip':
             return (
               <PromoStrip
-                key="promoStrip"
+                key={secKey}
                 tag={section.tag || 'YOUR SAVINGS'}
                 title={section.title || 'Stock up. Save more.'}
                 subtitle={section.subtitle || 'Explore the current coupons and exclusive discounts for your basket.'}
@@ -542,13 +591,13 @@ export const HomeScreen = ({ navigation }: any) => {
 
           case 'categoryRails':
             return (
-              <View key="categoryRails">
-                {allCategoryRails.map(({ category, items }) => {
+              <View key={secKey}>
+                {allCategoryRails.map(({ category, items }, catIdx) => {
                   const isCatSoon = dataCache.isCategoryComingSoon(category.slug);
                   const backendEta = dataCache.getEstimatedDelivery('20-30 mins');
                   return (
                     <ProductRail
-                      key={`cat_rail_${category.id || category.slug}`}
+                      key={`cat_rail_${category.id || category.slug || catIdx}_${catIdx}`}
                       title={category.name}
                       badge={isCatSoon ? (lang === 'hi' ? 'जल्द आएगा' : 'Coming Soon') : undefined}
                       subtitle={
@@ -573,7 +622,7 @@ export const HomeScreen = ({ navigation }: any) => {
           case 'specialOffers':
             return specialOffers.length > 0 ? (
               <ProductRail
-                key="specialOffers"
+                key={secKey}
                 title={section.title || 'Special offers'}
                 subtitle={section.subtitle || 'Save big with minimum 15% discount'}
                 badge="DEALS"
@@ -589,7 +638,7 @@ export const HomeScreen = ({ navigation }: any) => {
             ) : null;
 
           case 'promise':
-            return <PromiseStrip key="promise" />;
+            return <PromiseStrip key={secKey} />;
 
           default:
             return null;
@@ -776,7 +825,7 @@ export const HomeScreen = ({ navigation }: any) => {
         <FlatList
           data={products}
           renderItem={renderProductItem}
-          keyExtractor={item => item.id}
+          keyExtractor={(item, index) => `${item.id || 'prod'}_${index}`}
           numColumns={2}
           ListHeaderComponent={renderListHeader}
           contentContainerStyle={[
