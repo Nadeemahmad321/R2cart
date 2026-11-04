@@ -28,7 +28,7 @@ interface ProductMediaProps {
   dietInfo?: DietaryInfo | null;
 }
 
-function optimizeThumb(url?: string | null, targetWidth = 320): string {
+function optimizeThumb(url?: string | null, targetWidth = 240): string {
   if (!url || typeof url !== 'string') return '';
   const trimmed = url.trim();
   if (trimmed.includes('res.cloudinary.com') && trimmed.includes('/upload/') && !trimmed.includes('w_')) {
@@ -103,6 +103,7 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
           source={imageSource}
           style={[styles.productImg, (isOutOfStock || isComingSoon) && styles.productImgDimmed]}
           resizeMode="cover"
+          fadeDuration={0}
         />
       ) : (
         <View style={styles.placeholderWrap}>
@@ -343,7 +344,7 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
       </TouchableOpacity>
 
       {/* Multiple Pack/Unit Choice Modal (Backend Connected) */}
-      {hasMultiplePacks && (
+      {hasMultiplePacks && packModalOpen && (
         <Modal
           visible={packModalOpen}
           transparent
@@ -464,11 +465,13 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
       )}
 
       {/* Product Enquiry Modal */}
-      <ProductEnquiryModal
-        visible={enquiryModalOpen}
-        product={product}
-        onClose={() => setEnquiryModalOpen(false)}
-      />
+      {enquiryModalOpen && (
+        <ProductEnquiryModal
+          visible={enquiryModalOpen}
+          product={product}
+          onClose={() => setEnquiryModalOpen(false)}
+        />
+      )}
     </>
   );
 }, (prev, next) => {

@@ -490,7 +490,7 @@ export const CategoriesScreen = ({ navigation, route }: any) => {
                 initialNumToRender={8}
                 maxToRenderPerBatch={8}
                 windowSize={5}
-                removeClippedSubviews={Platform.OS === 'android'}
+                removeClippedSubviews={false}
                 showsVerticalScrollIndicator={false}
                 ListHeaderComponent={
                   <View style={{ marginBottom: 6 }}>

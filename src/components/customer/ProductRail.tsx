@@ -95,9 +95,9 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
         keyExtractor={(item, index) => `rail_${item.id || 'itm'}_${index}`}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        initialNumToRender={8}
-        maxToRenderPerBatch={10}
-        windowSize={7}
+        initialNumToRender={3}
+        maxToRenderPerBatch={4}
+        windowSize={3}
         removeClippedSubviews={false}
         renderItem={renderItem}
       />

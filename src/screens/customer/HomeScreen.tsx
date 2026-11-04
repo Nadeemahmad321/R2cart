@@ -91,6 +91,7 @@ export const HomeScreen = ({ navigation }: any) => {
   const [storeSettings, setStoreSettings] = useState<any>(dataCache.getSettings());
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [gridDisplayCount, setGridDisplayCount] = useState<number>(20);
 
   const HOME_FEED_CACHE_KEY = '@r2cart_home_feed_cache';
 
@@ -472,6 +473,15 @@ export const HomeScreen = ({ navigation }: any) => {
     return unique.sort((a: any, b: any) => (Number(a.order) || 0) - (Number(b.order) || 0));
   }, [storeSettings]);
 
+  // Virtualized window for bottom storefront grid to prevent excessive memory consumption
+  const displayedGridProducts = useMemo(() => {
+    return products.slice(0, gridDisplayCount);
+  }, [products, gridDisplayCount]);
+
+  const handleEndReached = useCallback(() => {
+    setGridDisplayCount(prev => (prev < products.length ? Math.min(products.length, prev + 20) : prev));
+  }, [products.length]);
+
   // Storefront main grid item renderer - clean and high-performance
   const renderProductItem = useCallback(
     ({ item }: { item: Product }) => (
@@ -589,10 +599,12 @@ export const HomeScreen = ({ navigation }: any) => {
               />
             );
 
-          case 'categoryRails':
+          case 'categoryRails': {
+            const maxCats = Number(section.maxCategories) || 6;
+            const railsToRender = allCategoryRails.slice(0, maxCats);
             return (
               <View key={secKey}>
-                {allCategoryRails.map(({ category, items }, catIdx) => {
+                {railsToRender.map(({ category, items }, catIdx) => {
                   if (!category) return null;
                   const catName = category.name || category.slug || 'Items';
                   const isCatSoon = dataCache.isCategoryComingSoon(category.slug);
@@ -620,6 +632,7 @@ export const HomeScreen = ({ navigation }: any) => {
                 })}
               </View>
             );
+          }
 
           case 'specialOffers':
             return specialOffers.length > 0 ? (
@@ -825,7 +838,7 @@ export const HomeScreen = ({ navigation }: any) => {
       ) : (
         /* High-Performance Virtualized Single FlatList */
         <FlatList
-          data={products}
+          data={displayedGridProducts}
           renderItem={renderProductItem}
           keyExtractor={(item, index) => `${item.id || 'prod'}_${index}`}
           numColumns={2}
@@ -835,11 +848,12 @@ export const HomeScreen = ({ navigation }: any) => {
             { paddingBottom: 110 + insets.bottom },
           ]}
           columnWrapperStyle={styles.productRowWrapper}
-          initialNumToRender={6}
+          initialNumToRender={4}
           maxToRenderPerBatch={6}
           windowSize={5}
-          removeClippedSubviews={Platform.OS === 'android'}
-          updateCellsBatchingPeriod={50}
+          removeClippedSubviews={false}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         />

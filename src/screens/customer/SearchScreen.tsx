@@ -354,7 +354,7 @@ export const SearchScreen = ({ navigation, route }: any) => {
           initialNumToRender={6}
           maxToRenderPerBatch={6}
           windowSize={7}
-          removeClippedSubviews={Platform.OS === 'android'}
+          removeClippedSubviews={false}
           updateCellsBatchingPeriod={50}
         />
       )}
