@@ -1,4 +1,4 @@
-import { Category, Product } from '../types';
+import { Category, Product, Address } from '../types';
 import { normalizeHomeLayout, HomeLayoutConfig } from '../config/homeLayout';
 
 export interface EmergencyInfo {
@@ -28,6 +28,38 @@ class DataCacheService {
   private productById: Map<string, Product> = new Map();
   private settings: any = null;
   private deliveryData: any = null;
+  private addresses: Address[] = [];
+  private selectedAddress: Address | null = null;
+
+  getAddresses(): Address[] {
+    return this.addresses;
+  }
+
+  setAddresses(list: Address[]) {
+    if (Array.isArray(list)) {
+      this.addresses = list;
+      if (!this.selectedAddress && list.length > 0) {
+        this.selectedAddress = list.find((a: any) => a.isDefault || a.default) || list[0];
+      } else if (this.selectedAddress) {
+        const stillExists = list.find((a: any) => a.id === this.selectedAddress?.id);
+        if (stillExists) {
+          this.selectedAddress = stillExists;
+        } else if (list.length > 0) {
+          this.selectedAddress = list.find((a: any) => a.isDefault || a.default) || list[0];
+        } else {
+          this.selectedAddress = null;
+        }
+      }
+    }
+  }
+
+  getSelectedAddress(): Address | null {
+    return this.selectedAddress;
+  }
+
+  setSelectedAddress(addr: Address | null) {
+    this.selectedAddress = addr;
+  }
 
   getSettings(): any {
     return this.settings;

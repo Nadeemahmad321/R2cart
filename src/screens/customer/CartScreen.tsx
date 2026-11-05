@@ -232,11 +232,11 @@ export const CartScreen = ({ route, navigation }: any) => {
   }, [validItems, prefetchTranslations]);
 
   const [pullRefreshing, setPullRefreshing] = useState<boolean>(false);
-  const [addresses, setAddresses] = useState<Address[]>([]);
-  const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
+  const [addresses, setAddresses] = useState<Address[]>(() => dataCache.getAddresses());
+  const [selectedAddress, setSelectedAddress] = useState<Address | null>(() => dataCache.getSelectedAddress());
   const [addressModalVisible, setAddressModalVisible] = useState<boolean>(false);
   const [clearModalVisible, setClearModalVisible] = useState<boolean>(false);
-  const [loadingAddresses, setLoadingAddresses] = useState<boolean>(false);
+  const [loadingAddresses, setLoadingAddresses] = useState<boolean>(() => !dataCache.getSelectedAddress());
 
   // Delivery Mode & Scheduling
   const [deliveryType, setDeliveryType] = useState<'INSTANT' | 'SCHEDULED'>('INSTANT');
@@ -429,28 +429,62 @@ export const CartScreen = ({ route, navigation }: any) => {
   const [tip, setTip] = useState<number>(0);
   const [placing, setPlacing] = useState<boolean>(false);
 
-  // Fetch real addresses from backend
-  const fetchAddresses = useCallback(async () => {
-    if (!user) return;
-    setLoadingAddresses(true);
-    try {
-      const res = await api.getAddresses();
-      const list = Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : []);
-      setAddresses(list);
-      if (list.length > 0) {
+  // Fetch real addresses from backend with 0ms instant cache preservation
+  const fetchAddresses = useCallback(
+    async (forceLoading = false) => {
+      if (!user) {
+        setAddresses([]);
+        setSelectedAddress(null);
+        dataCache.setAddresses([]);
+        dataCache.setSelectedAddress(null);
+        setLoadingAddresses(false);
+        return;
+      }
+
+      // Only show skeleton if we have NO cached address at all
+      const cached = dataCache.getAddresses();
+      if (cached.length === 0 && !selectedAddress && forceLoading) {
+        setLoadingAddresses(true);
+      }
+
+      try {
+        const res = await api.getAddresses();
+        const list = Array.isArray(res.data) ? res.data : Array.isArray(res) ? res : [];
+        setAddresses(list);
+        dataCache.setAddresses(list);
+
         const paramId = route?.params?.selectedAddressId;
         const paramAddr = paramId ? list.find((a: any) => a.id === paramId) : null;
-        const defaultAddr = list.find((a: any) => a.isDefault || a.default) || list[0];
-        setSelectedAddress(paramAddr || defaultAddr);
-      } else {
-        setSelectedAddress(null);
+
+        setSelectedAddress(prev => {
+          if (paramAddr) {
+            dataCache.setSelectedAddress(paramAddr);
+            return paramAddr;
+          }
+          if (prev) {
+            // Keep the user's selected address without resetting to default!
+            const stillExists = list.find((a: any) => a.id === prev.id);
+            if (stillExists) {
+              dataCache.setSelectedAddress(stillExists);
+              return stillExists;
+            }
+          }
+          if (list.length > 0) {
+            const defaultAddr = list.find((a: any) => a.isDefault || a.default) || list[0];
+            dataCache.setSelectedAddress(defaultAddr);
+            return defaultAddr;
+          }
+          dataCache.setSelectedAddress(null);
+          return null;
+        });
+      } catch {
+        // Graceful error fallback
+      } finally {
+        setLoadingAddresses(false);
       }
-    } catch {
-      // Graceful error fallback
-    } finally {
-      setLoadingAddresses(false);
-    }
-  }, [user]);
+    },
+    [user, selectedAddress, route?.params?.selectedAddressId]
+  );
 
   // Fetch dynamic coupons, delivery rules, store schedule, and categories
   useEffect(() => {
@@ -492,7 +526,7 @@ export const CartScreen = ({ route, navigation }: any) => {
   useFocusEffect(
     useCallback(() => {
       syncCartWithBackend();
-      fetchAddresses();
+      fetchAddresses(false);
     }, [syncCartWithBackend, fetchAddresses])
   );
 
@@ -501,7 +535,7 @@ export const CartScreen = ({ route, navigation }: any) => {
     try {
       await Promise.allSettled([
         syncCartWithBackend(),
-        fetchAddresses(),
+        fetchAddresses(false),
         fetchStoreSchedule(),
       ]);
     } finally {
@@ -1755,6 +1789,7 @@ export const CartScreen = ({ route, navigation }: any) => {
                       ]}
                       onPress={() => {
                         setSelectedAddress(item);
+                        dataCache.setSelectedAddress(item);
                         setAddressModalVisible(false);
                       }}
                     >

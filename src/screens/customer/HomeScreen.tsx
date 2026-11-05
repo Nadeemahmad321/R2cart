@@ -239,11 +239,18 @@ export const HomeScreen = ({ navigation }: any) => {
       if (user && addrRes.status === 'fulfilled' && addrRes.value?.data) {
         userAddrs = Array.isArray(addrRes.value.data) ? addrRes.value.data : [];
         setSavedAddresses(userAddrs);
+        dataCache.setAddresses(userAddrs);
         if (userAddrs.length > 0) {
           const defaultAddr = userAddrs.find((a: any) => a.isDefault) || userAddrs[0];
-          setSelectedAddressId(defaultAddr.id);
+          setSelectedAddressId(prev => {
+            if (prev && userAddrs.some((a: any) => a.id === prev)) return prev;
+            return defaultAddr.id;
+          });
+          const chosen = userAddrs.find((a: any) => a.id === selectedAddressId) || defaultAddr;
+          dataCache.setSelectedAddress(chosen);
         } else {
           setSelectedAddressId(null);
+          dataCache.setSelectedAddress(null);
         }
       } else {
         setSavedAddresses([]);
@@ -346,11 +353,16 @@ export const HomeScreen = ({ navigation }: any) => {
         api.getAddresses().then(res => {
           if (res.data && Array.isArray(res.data)) {
             setSavedAddresses(res.data);
+            dataCache.setAddresses(res.data);
             if (res.data.length > 0) {
-              const def = res.data.find((a: any) => a.isDefault) || res.data[0];
-              setSelectedAddressId(def ? def.id : null);
+              setSelectedAddressId(prev => {
+                if (prev && res.data.some((a: any) => a.id === prev)) return prev;
+                const def = res.data.find((a: any) => a.isDefault) || res.data[0];
+                return def ? def.id : null;
+              });
             } else {
               setSelectedAddressId(null);
+              dataCache.setSelectedAddress(null);
             }
           }
         }).catch(() => {}).finally(() => {
@@ -1211,6 +1223,7 @@ export const HomeScreen = ({ navigation }: any) => {
                         style={[styles.villageItem, isSelected && styles.villageItemActive]}
                         onPress={() => {
                           setSelectedAddressId(addr.id);
+                          dataCache.setSelectedAddress(addr);
                           setLocationModalVisible(false);
                         }}
                       >

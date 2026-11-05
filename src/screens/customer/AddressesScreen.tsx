@@ -24,6 +24,7 @@ import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { Address } from '../../types';
+import { dataCache } from '../../services/dataCache';
 import { AddressCardSkeleton } from '../../components/common/Skeleton';
 
 export const AddressesScreen = ({ navigation, route }: any) => {
@@ -118,6 +119,7 @@ export const AddressesScreen = ({ navigation, route }: any) => {
       const list = res?.data?.data || res?.data?.addresses || res?.data || [];
       if (Array.isArray(list)) {
         setAddresses(list);
+        dataCache.setAddresses(list);
       }
     } catch (err: any) {
       console.warn('Addresses fetch error:', err.message);
