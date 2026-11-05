@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
@@ -28,6 +29,7 @@ interface ProductRailProps {
 }
 
 const RAIL_CARD_WIDTH = 146;
+const PAGE_SIZE = 5;
 
 export const ProductRail: React.FC<ProductRailProps> = React.memo(({
   title,
@@ -43,9 +45,27 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
   getItemQuantity,
 }) => {
   const { t, tCat } = useLanguage();
-  if (!products || products.length === 0) return null;
 
-  const renderItem = React.useCallback(
+  // Lazy loading state: initially load 5 products, then batch 5-by-5 on scroll
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Reset to initial 5 items whenever the products collection updates
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [products]);
+
+  const visibleProducts = useMemo(() => {
+    if (!products || products.length === 0) return [];
+    return products.slice(0, visibleCount);
+  }, [products, visibleCount]);
+
+  const handleEndReached = useCallback(() => {
+    if (visibleCount < (products?.length || 0)) {
+      setVisibleCount(prev => Math.min(prev + PAGE_SIZE, products.length));
+    }
+  }, [visibleCount, products?.length]);
+
+  const renderItem = useCallback(
     ({ item }: { item: Product }) => (
       <ProductCard
         product={item}
@@ -58,6 +78,40 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
     ),
     [getItemQuantity, onAddToCart, onRemoveFromCart, onProductPress]
   );
+
+  const renderFooter = useCallback(() => {
+    const totalCount = products?.length || 0;
+    if (visibleCount < totalCount) {
+      return (
+        <View style={styles.footerLoaderWrap}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+          <Text style={styles.loadingMoreText}>
+            {visibleCount}/{totalCount}
+          </Text>
+        </View>
+      );
+    }
+    if (onSeeAll && totalCount > PAGE_SIZE) {
+      return (
+        <TouchableOpacity
+          style={styles.endSeeAllCard}
+          activeOpacity={0.75}
+          onPress={onSeeAll}
+        >
+          <View style={styles.endSeeAllCircle}>
+            <Feather name="arrow-right" size={18} color={Colors.primaryDark} />
+          </View>
+          <Text style={styles.endSeeAllTitle}>{t('seeAll')}</Text>
+          <Text style={styles.endSeeAllSub}>
+            {totalCount} {t('items')}
+          </Text>
+        </TouchableOpacity>
+      );
+    }
+    return null;
+  }, [visibleCount, products?.length, onSeeAll, t]);
+
+  if (!products || products.length === 0) return null;
 
   return (
     <View style={styles.container}>
@@ -91,15 +145,18 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
 
       <FlatList
         horizontal
-        data={products}
+        data={visibleProducts}
         keyExtractor={(item, index) => `rail_${item.id || 'itm'}_${index}`}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        initialNumToRender={3}
-        maxToRenderPerBatch={4}
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
         windowSize={3}
-        removeClippedSubviews={false}
+        removeClippedSubviews={Platform.OS === 'android'}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.4}
         renderItem={renderItem}
+        ListFooterComponent={renderFooter}
       />
     </View>
   );
@@ -168,5 +225,55 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     gap: 10,
+  },
+  footerLoaderWrap: {
+    width: 64,
+    minHeight: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    marginRight: 8,
+  },
+  loadingMoreText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94A3B8',
+    marginTop: 6,
+  },
+  endSeeAllCard: {
+    width: 104,
+    minHeight: 220,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 12,
+    marginRight: 8,
+    marginBottom: 12,
+  },
+  endSeeAllCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  endSeeAllTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  endSeeAllSub: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 3,
+    textAlign: 'center',
   },
 });
