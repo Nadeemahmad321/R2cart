@@ -412,6 +412,10 @@ export const HomeScreen = ({ navigation }: any) => {
   }, [navigation]);
 
   const handleCategoryPress = useCallback((category: Category) => {
+    if (!category) {
+      navigation.navigate('CategoriesTab');
+      return;
+    }
     navigation.navigate('CategoriesTab', {
       categoryId: category.id,
       categorySlug: category.slug,
@@ -731,7 +735,7 @@ export const HomeScreen = ({ navigation }: any) => {
                 onAddToCart={addToCart}
                 onRemoveFromCart={removeFromCart}
                 getItemQuantity={getItemQuantity}
-                onSeeAll={() => navigation.navigate('SearchTab')}
+                onSeeAll={() => navigation.navigate('CategoriesTab')}
               />
             ) : null;
           }
@@ -756,7 +760,7 @@ export const HomeScreen = ({ navigation }: any) => {
                 onAddToCart={addToCart}
                 onRemoveFromCart={removeFromCart}
                 getItemQuantity={getItemQuantity}
-                onSeeAll={() => navigation.navigate('SearchTab', { filter: 'bestseller' })}
+                onSeeAll={() => navigation.navigate('CategoriesTab')}
               />
             ) : null;
           }
@@ -778,7 +782,7 @@ export const HomeScreen = ({ navigation }: any) => {
                 onAddToCart={addToCart}
                 onRemoveFromCart={removeFromCart}
                 getItemQuantity={getItemQuantity}
-                onSeeAll={() => navigation.navigate('SearchTab', { filter: 'toppicks' })}
+                onSeeAll={() => navigation.navigate('CategoriesTab')}
               />
             ) : null;
           }
@@ -863,7 +867,7 @@ export const HomeScreen = ({ navigation }: any) => {
                 onAddToCart={addToCart}
                 onRemoveFromCart={removeFromCart}
                 getItemQuantity={getItemQuantity}
-                onSeeAll={() => navigation.navigate('SearchTab', { filter: 'discount' })}
+                onSeeAll={() => navigation.navigate('CategoriesTab')}
               />
             ) : null;
           }
@@ -887,7 +891,7 @@ export const HomeScreen = ({ navigation }: any) => {
                 onAddToCart={addToCart}
                 onRemoveFromCart={removeFromCart}
                 getItemQuantity={getItemQuantity}
-                onSeeAll={() => navigation.navigate('SearchTab')}
+                onSeeAll={() => navigation.navigate('CategoriesTab')}
               />
             ) : null;
           }
