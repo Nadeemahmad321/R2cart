@@ -1,180 +1,98 @@
-
+/**
+ * Production-Grade Google Play Store Asset Generator for R2Cart
+ * Generates:
+ * 1. 5x Phone Screenshots (1080 x 2280)
+ * 2. 5x 7-Inch Tablet Screenshots (1200 x 1920)
+ * 3. 5x 10-Inch Tablet Screenshots (1600 x 2560)
+ * 4. 1x Feature Graphic (1024 x 500)
+ */
 
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 
-const USER_UPLOADED_DIR = 'C:/Users/ACER/.gemini/antigravity-ide/brain/f6de9ba1-8f0b-4e37-81b0-ab0ec51c28fc/.user_uploaded/';
+const USER_UPLOADED_DIR = 'C:/Users/ACER/.gemini/antigravity/brain/7a53e94c-42b8-4b01-b4fd-5819b0abfba9/.user_uploaded/';
 const ASSETS_IMAGES_DIR = path.resolve(__dirname, '../src/assets/images');
 const OUTPUT_BASE_DIR = path.resolve(__dirname, '../google_play_assets');
 
-// Source screenshot mappings from user upload
-const SCREENSHOT_MAP = {
-  home: path.join(USER_UPLOADED_DIR, 'media_1793175860135.png'),
-  categories: path.join(USER_UPLOADED_DIR, 'media_1793175843421.png'),
-  cart: path.join(USER_UPLOADED_DIR, 'media_1793175851198.png'),
-  signin: path.join(USER_UPLOADED_DIR, 'media_1793175876691.png'),
-  signup: path.join(USER_UPLOADED_DIR, 'media_1793175869196.png'),
-};
-
-const LOGO_PATH = path.join(ASSETS_IMAGES_DIR, 'logo.png');
-const ICON_PATH = path.join(ASSETS_IMAGES_DIR, 'app-icon.png');
-
-// Ensure output directories exist
 const DIRS = {
-  icon: path.join(OUTPUT_BASE_DIR, 'app_icon'),
-  feature: path.join(OUTPUT_BASE_DIR, 'feature_graphic'),
   phone: path.join(OUTPUT_BASE_DIR, 'phone_screenshots'),
   tablet7: path.join(OUTPUT_BASE_DIR, 'tablet_7inch_screenshots'),
   tablet10: path.join(OUTPUT_BASE_DIR, 'tablet_10inch_screenshots'),
+  feature: path.join(OUTPUT_BASE_DIR, 'feature_graphic'),
 };
 
-Object.values(DIRS).forEach(d => {
-  if (!fs.existsSync(d)) {
-    fs.mkdirSync(d, { recursive: true });
-  }
+Object.values(DIRS).forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-async function generateAppIcon() {
-  console.log('Generating Google Play App Icon (512x512)...');
-  const targetPath = path.join(DIRS.icon, 'playstore_icon_512x512.png');
+const SCREENSHOT_MAP = {
+  home: path.join(USER_UPLOADED_DIR, 'media_1793893669146_2f17bda8.jpg'),
+  categories: path.join(USER_UPLOADED_DIR, 'media_1793893679732_b4b4d7f4.jpg'),
+  cart: path.join(USER_UPLOADED_DIR, 'media_1793893704309_05af7597.jpg'),
+  orders: path.join(USER_UPLOADED_DIR, 'media_1793893688033_e241c97b.jpg'),
+  account: path.join(USER_UPLOADED_DIR, 'media_1793893695712_4fafaf40.jpg'),
+};
 
-  // Clean, high quality 512x512 icon
-  await sharp(ICON_PATH)
-    .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
-    .png({ quality: 100, compressionLevel: 9 })
-    .toFile(targetPath);
+const LOGO_PATH = path.join(ASSETS_IMAGES_DIR, 'logo.png');
 
-  console.log(`✓ Generated: ${targetPath}`);
-}
-
-async function generateFeatureGraphic() {
-  console.log('Generating Google Play Feature Graphic (1024x500)...');
-  const targetPath = path.join(DIRS.feature, 'feature_graphic_1024x500.png');
-
-  // Load logo resized to fit cleanly on left side
-  const logoBuf = await sharp(LOGO_PATH)
-    .resize({ width: 340, height: 110, fit: 'inside' })
-    .toBuffer();
-
-  // Load a cropped preview of the home screen / category fruit card to show real app preview
-  const previewBuf = await sharp(SCREENSHOT_MAP.home)
-    .resize({ width: 340, height: 480, fit: 'cover', position: 'top' })
-    .composite([
-      // Add subtle rounded corner / frame to preview
-      {
-        input: Buffer.from(`
-          <svg width="340" height="480">
-            <rect x="0" y="0" width="340" height="480" rx="20" ry="20" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="4"/>
-          </svg>
-        `),
-        top: 0,
-        left: 0
-      }
-    ])
-    .toBuffer();
-
-  // SVG background with rich brand gradient, patterns, and prominent typography
-  const bgSvg = `
-    <svg width="1024" height="500" viewBox="0 0 1024 500" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#047857" />
-          <stop offset="45%" stop-color="#059669" />
-          <stop offset="100%" stop-color="#0F766E" />
-        </linearGradient>
-        <radialGradient id="glow" cx="80%" cy="30%" r="50%">
-          <stop offset="0%" stop-color="#34D399" stop-opacity="0.35" />
-          <stop offset="100%" stop-color="#059669" stop-opacity="0" />
-        </radialGradient>
-        <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-          <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.3"/>
-        </filter>
-      </defs>
-
-      <!-- Main Background -->
-      <rect width="1024" height="500" fill="url(#bgGrad)" />
-      <rect width="1024" height="500" fill="url(#glow)" />
-
-      <!-- Modern Decorative Circles -->
-      <circle cx="920" cy="80" r="140" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="32" />
-      <circle cx="100" cy="460" r="180" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="40" />
-
-      <!-- Left Content Box -->
-      <!-- Delivery Speed Pill Badge -->
-      <g transform="translate(60, 48)">
-        <rect x="0" y="0" width="260" height="36" rx="18" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" />
-        <circle cx="20" cy="18" r="6" fill="#FDE047" />
-        <text x="36" y="24" font-family="Arial, Helvetica, sans-serif" font-size="13.5" font-weight="bold" fill="#FFFFFF">15-20 MINS EXPRESS DELIVERY</text>
-      </g>
-
-      <!-- Headings -->
-      <text x="60" y="235" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" fill="#FFFFFF" letter-spacing="-0.5">
-        Fresh Groceries &amp;
-      </text>
-      <text x="60" y="278" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" fill="#FEF08A" letter-spacing="-0.5">
-        Daily Essentials
-      </text>
-
-      <text x="60" y="325" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="500" fill="#E6FFFA">
-        Doorstep Grocery Delivery Across Hathua, Bihar
-      </text>
-
-      <!-- Feature Bullet Badges -->
-      <g transform="translate(60, 365)">
-        <!-- Badge 1 -->
-        <rect x="0" y="0" width="155" height="34" rx="8" fill="rgba(0,0,0,0.18)" />
-        <text x="14" y="22" font-family="Arial, Helvetica, sans-serif" font-size="12.5" font-weight="bold" fill="#FFFFFF">🍏 Farm Fresh Produce</text>
-
-        <!-- Badge 2 -->
-        <rect x="168" y="0" width="138" height="34" rx="8" fill="rgba(0,0,0,0.18)" />
-        <text x="14" y="22" font-family="Arial, Helvetica, sans-serif" font-size="12.5" font-weight="bold" fill="#FFFFFF">🥛 Dairy &amp; Bakery</text>
-
-        <!-- Badge 3 -->
-        <rect x="318" y="0" width="145" height="34" rx="8" fill="rgba(0,0,0,0.18)" />
-        <text x="14" y="22" font-family="Arial, Helvetica, sans-serif" font-size="12.5" font-weight="bold" fill="#FFFFFF">💰 Best Local Prices</text>
-      </g>
-
-      <!-- Bottom Hathua Notice -->
-      <text x="60" y="445" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="bold" fill="rgba(255,255,255,0.7)">
-        Serving: Hathua Town, Wards, &amp; Nearby Village Areas
-      </text>
-    </svg>
-  `;
-
-  // White container for logo
-  const logoCard = Buffer.from(`
-    <svg width="360" height="90">
-      <rect x="0" y="0" width="360" height="90" rx="16" fill="#FFFFFF" />
-    </svg>
-  `);
-
-  await sharp(Buffer.from(bgSvg))
-    .composite([
-      // Logo card background
-      {
-        input: logoCard,
-        top: 98,
-        left: 60,
-      },
-      // Logo image
-      {
-        input: logoBuf,
-        top: 108,
-        left: 70,
-      },
-      // App preview phone on the right side
-      {
-        input: previewBuf,
-        top: 10,
-        left: 640,
-      }
-    ])
-    .png({ quality: 100 })
-    .toFile(targetPath);
-
-  console.log(`✓ Generated: ${targetPath}`);
-}
+const SCREEN_CONFIGS = [
+  {
+    key: 'home',
+    order: '01',
+    outName: '01_home_screen.png',
+    badge: '⚡ 10-30 MINS EXPRESS DELIVERY',
+    badgeColor: '#FEF08A',
+    title: 'Superfast Grocery Delivery',
+    subtitle: 'Fresh fruits, vegetables, dairy & staples delivered at your door',
+    gradientStart: '#047857',
+    gradientEnd: '#064E3B',
+  },
+  {
+    key: 'categories',
+    order: '02',
+    outName: '02_categories_screen.png',
+    badge: '🛒 1000+ PRODUCTS & CATEGORIES',
+    badgeColor: '#6EE7B7',
+    title: 'Explore Endless Variety',
+    subtitle: 'Farm fresh produce, daily essentials, munchies & cold drinks',
+    gradientStart: '#0F766E',
+    gradientEnd: '#064E3B',
+  },
+  {
+    key: 'cart',
+    order: '03',
+    outName: '03_cart_screen.png',
+    badge: '💳 SMART CART & EASY CHECKOUT',
+    badgeColor: '#FDE047',
+    title: 'Instant & Scheduled Slots',
+    subtitle: 'Free delivery, coupon savings & custom doorstep instructions',
+    gradientStart: '#047857',
+    gradientEnd: '#022C22',
+  },
+  {
+    key: 'orders',
+    order: '04',
+    outName: '04_orders_screen.png',
+    badge: '🚚 REAL-TIME LIVE TRACKING',
+    badgeColor: '#A7F3D0',
+    title: 'Track Orders Seamlessly',
+    subtitle: 'Live order status updates, complete invoices & 1-tap re-order',
+    gradientStart: '#065F46',
+    gradientEnd: '#0F172A',
+  },
+  {
+    key: 'account',
+    order: '05',
+    outName: '05_account_screen.png',
+    badge: '👤 MULTI-LANGUAGE & 24/7 SUPPORT',
+    badgeColor: '#FEF08A',
+    title: 'Personalized For You',
+    subtitle: 'English & Hindi support, saved addresses, wishlist & quick help',
+    gradientStart: '#047857',
+    gradientEnd: '#0D2E20',
+  },
+];
 
 function escapeXml(unsafe) {
   return String(unsafe || '')
@@ -185,252 +103,465 @@ function escapeXml(unsafe) {
     .replace(/'/g, '&apos;');
 }
 
-const PHONE_CONFIGS = [
-  {
-    key: 'home',
-    badge: '⚡ 15-20 MINS EXPRESS DELIVERY',
-    title: 'Fresh Groceries in Hathua',
-    sub: 'Fruits, veggies, dairy, snacks & kitchen staples at best prices',
-    outName: '01_home_screen.png'
-  },
-  {
-    key: 'categories',
-    badge: '🛒 1000+ PRODUCTS IN STOCK',
-    title: 'Explore All Categories',
-    sub: 'Easy category browsing with quick 1-tap add to cart',
-    outName: '02_categories_screen.png'
-  },
-  {
-    key: 'cart',
-    badge: '📦 INSTANT & SCHEDULED DELIVERY',
-    title: 'Convenient Doorstep Checkout',
-    sub: 'Choose Instant delivery or schedule for your preferred time slot',
-    outName: '03_cart_basket_screen.png'
-  },
-  {
-    key: 'signin',
-    badge: '🔒 SAFE & SECURE AUTHENTICATION',
-    title: 'Easy One-Tap Access',
-    sub: 'Quick sign in with email, phone number & password',
-    outName: '04_sign_in_screen.png'
-  },
-  {
-    key: 'signup',
-    badge: '🎉 JOIN R2CART TODAY',
-    title: 'Instant OTP Registration',
-    sub: 'Create your account, save Hathua addresses & start saving',
-    outName: '05_create_account_screen.png'
-  }
-];
+/**
+ * Prepares clean app screenshot:
+ * Crops top 46px (status bar) and bottom 20px (home navigation bar)
+ * Scales to exact width/height and clips to rounded corners
+ */
+async function prepareScreenContent(srcPath, targetW, targetH, radius) {
+  // 1. Crop status bar and bottom gesture bar
+  const cropped = await sharp(srcPath)
+    .extract({ left: 0, top: 46, width: 460, height: 954 })
+    .toBuffer();
 
+  // 2. SVG mask with exact rounded corners
+  const maskSvg = Buffer.from(`
+    <svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="${targetW}" height="${targetH}" rx="${radius}" ry="${radius}" fill="#ffffff" />
+    </svg>
+  `);
+
+  // 3. Resize and mask
+  return sharp(cropped)
+    .resize(targetW, targetH, { fit: 'fill' })
+    .composite([{ input: maskSvg, blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+}
+
+/**
+ * 1. PHONE SCREENSHOTS (1080 x 2280)
+ */
 async function generatePhoneScreenshots() {
-  console.log('Generating Google Play Phone Screenshots (1080x2160, exactly 1:2 ratio)...');
+  console.log('--- Generating 5x Phone Screenshots (1080 x 2280) ---');
+  const canvasW = 1080;
+  const canvasH = 2280;
 
-  for (const cfg of PHONE_CONFIGS) {
-    const srcImg = SCREENSHOT_MAP[cfg.key];
-    const targetPath = path.join(DIRS.phone, cfg.outName);
+  const phoneW = 880;
+  const phoneH = 1720;
+  const phoneX = 100;
+  const phoneY = 460;
+  const phoneRadius = 50;
 
-    // Resize actual screenshot to fit phone frame (width: 860, height: 1530)
-    const screenBuf = await sharp(srcImg)
-      .resize({ width: 840, height: 1540, fit: 'fill' })
-      .composite([
-        {
-          input: Buffer.from(`
-            <svg width="840" height="1540">
-              <rect x="0" y="0" width="840" height="1540" rx="36" ry="36" fill="none" stroke="#CBD5E1" stroke-width="4"/>
-            </svg>
-          `),
-          top: 0,
-          left: 0
-        }
-      ])
-      .toBuffer();
+  const screenInset = 16;
+  const screenW = phoneW - (screenInset * 2); // 848
+  const screenH = phoneH - (screenInset * 2); // 1688
+  const screenX = phoneX + screenInset;       // 116
+  const screenY = phoneY + screenInset;       // 476
+  const screenRadius = 36;
 
-    const frameSvg = `
-      <svg width="1080" height="2160" viewBox="0 0 1080 2160" xmlns="http://www.w3.org/2000/svg">
+  for (const cfg of SCREEN_CONFIGS) {
+    const srcPath = SCREENSHOT_MAP[cfg.key];
+    const outPath = path.join(DIRS.phone, cfg.outName);
+
+    const screenBuffer = await prepareScreenContent(srcPath, screenW, screenH, screenRadius);
+
+    // SVG frame overlay with dynamic island, notch, borders, and drop shadow
+    const backgroundSvg = `
+      <svg width="${canvasW}" height="${canvasH}" viewBox="0 0 ${canvasW} ${canvasH}" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <linearGradient id="headerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="#059669" />
-            <stop offset="100%" stop-color="#047857" />
+          <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="${cfg.gradientStart}" />
+            <stop offset="100%" stop-color="${cfg.gradientEnd}" />
           </linearGradient>
-          <filter id="cardShadow" x="-10%" y="-5%" width="120%" height="115%">
-            <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#0F172A" flood-opacity="0.25"/>
+          <radialGradient id="topGlow" cx="80%" cy="20%" r="60%">
+            <stop offset="0%" stop-color="#34D399" stop-opacity="0.32" />
+            <stop offset="100%" stop-color="${cfg.gradientStart}" stop-opacity="0" />
+          </radialGradient>
+          <filter id="phoneShadow" x="-20%" y="-10%" width="140%" height="130%">
+            <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#022C22" flood-opacity="0.4" />
           </filter>
         </defs>
 
-        <!-- Solid Background -->
-        <rect width="1080" height="2160" fill="#F8FAFC" />
+        <!-- Canvas Background -->
+        <rect width="${canvasW}" height="${canvasH}" fill="#F8FAFC" />
 
-        <!-- Top Header Card -->
-        <rect width="1080" height="480" fill="url(#headerGrad)" />
-        <circle cx="1000" cy="60" r="160" fill="rgba(255,255,255,0.08)" />
+        <!-- Header Hero Section -->
+        <rect width="${canvasW}" height="540" fill="url(#headerGrad)" />
+        <rect width="${canvasW}" height="540" fill="url(#topGlow)" />
 
-        <!-- Badge -->
-        <g transform="translate(120, 90)">
-          <rect x="0" y="0" width="380" height="44" rx="22" fill="rgba(255,255,255,0.22)" />
-          <text x="26" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="bold" fill="#FEF08A">${escapeXml(cfg.badge)}</text>
+        <!-- Decorative Subtle Accent Rings -->
+        <circle cx="980" cy="80" r="140" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="28" />
+        <circle cx="80" cy="460" r="160" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="36" />
+
+        <!-- Badge Pill -->
+        <g transform="translate(${canvasW / 2}, 85)">
+          <rect x="-240" y="0" width="480" height="46" rx="23" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" />
+          <text x="0" y="30" text-anchor="middle" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="800" fill="${cfg.badgeColor}" letter-spacing="0.5">
+            ${escapeXml(cfg.badge)}
+          </text>
         </g>
 
         <!-- Main Title -->
-        <text x="120" y="210" font-family="Arial, Helvetica, sans-serif" font-size="46" font-weight="900" fill="#FFFFFF" letter-spacing="-0.5">
+        <text x="${canvasW / 2}" y="200" text-anchor="middle" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="52" font-weight="900" fill="#FFFFFF" letter-spacing="-0.5">
           ${escapeXml(cfg.title)}
         </text>
 
         <!-- Subtitle -->
-        <text x="120" y="275" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="500" fill="#E6FFFA">
-          ${escapeXml(cfg.sub)}
+        <text x="${canvasW / 2}" y="265" text-anchor="middle" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="22" font-weight="500" fill="#E6FFFA">
+          ${escapeXml(cfg.subtitle)}
         </text>
 
-        <!-- Mockup Device Frame Shadow & Container -->
-        <g filter="url(#cardShadow)">
-          <rect x="110" y="470" width="860" height="1560" rx="44" fill="#0F172A" />
+        <!-- Phone Mockup Body & Shadow -->
+        <g filter="url(#phoneShadow)">
+          <!-- Outer Phone Bezel -->
+          <rect x="${phoneX}" y="${phoneY}" width="${phoneW}" height="${phoneH}" rx="${phoneRadius}" ry="${phoneRadius}" fill="#0F172A" stroke="#334155" stroke-width="2" />
         </g>
       </svg>
     `;
 
-    await sharp(Buffer.from(frameSvg))
-      .composite([
-        {
-          input: screenBuf,
-          top: 480,
-          left: 120,
-        }
-      ])
-      .png({ quality: 95 })
-      .toFile(targetPath);
+    // Foreground SVG: Camera punch-hole / Dynamic Island & Home indicator
+    const overlaySvg = Buffer.from(`
+      <svg width="${canvasW}" height="${canvasH}" viewBox="0 0 ${canvasW} ${canvasH}" xmlns="http://www.w3.org/2000/svg">
+        <!-- Dynamic Island Cutout -->
+        <rect x="${(canvasW - 120) / 2}" y="${screenY + 12}" width="120" height="28" rx="14" fill="#030712" />
+        <circle cx="${canvasW / 2 + 35}" cy="${screenY + 26}" r="5" fill="#0F172A" />
+        <circle cx="${canvasW / 2 + 36}" cy="${screenY + 25}" r="1.5" fill="#38BDF8" opacity="0.8" />
 
-    console.log(`✓ Generated Phone: ${targetPath}`);
+        <!-- Home Bar Indicator -->
+        <rect x="${(canvasW - 160) / 2}" y="${screenY + screenH - 14}" width="160" height="4.5" rx="2.5" fill="#94A3B8" opacity="0.9" />
+      </svg>
+    `);
+
+    await sharp(Buffer.from(backgroundSvg))
+      .composite([
+        { input: screenBuffer, top: screenY, left: screenX },
+        { input: overlaySvg, top: 0, left: 0 }
+      ])
+      .png({ quality: 96 })
+      .toFile(outPath);
+
+    console.log(`✓ Phone: ${cfg.outName}`);
   }
 }
 
-async function generateTabletScreenshots() {
-  console.log('Generating Google Play 7-Inch Tablet Screenshots (1200x1920)...');
-  const tabletKeys = ['home', 'categories', 'cart', 'signin'];
+/**
+ * 2. 7-INCH TABLET SCREENSHOTS (1200 x 1920)
+ */
+async function generateTablet7Screenshots() {
+  console.log('--- Generating 5x 7-Inch Tablet Screenshots (1200 x 1920) ---');
+  const canvasW = 1200;
+  const canvasH = 1920;
 
-  for (let i = 0; i < tabletKeys.length; i++) {
-    const key = tabletKeys[i];
-    const cfg = PHONE_CONFIGS.find(c => c.key === key);
-    const srcImg = SCREENSHOT_MAP[key];
+  const tabletW = 860;
+  const tabletH = 1430;
+  const tabletX = 170;
+  const tabletY = 410;
+  const tabletRadius = 42;
 
-    // --- 7-Inch Tablet (1200 x 1920) ---
-    const t7Path = path.join(DIRS.tablet7, `0${i + 1}_tablet7_${key}.png`);
-    const screen7Buf = await sharp(srcImg)
-      .resize({ width: 780, height: 1400, fit: 'fill' })
-      .composite([
-        {
-          input: Buffer.from(`
-            <svg width="780" height="1400">
-              <rect x="0" y="0" width="780" height="1400" rx="30" ry="30" fill="none" stroke="#CBD5E1" stroke-width="4"/>
-            </svg>
-          `),
-          top: 0,
-          left: 0
-        }
-      ])
-      .toBuffer();
+  const screenInset = 16;
+  const screenW = tabletW - (screenInset * 2); // 828
+  const screenH = tabletH - (screenInset * 2); // 1398
+  const screenX = tabletX + screenInset;
+  const screenY = tabletY + screenInset;
+  const screenRadius = 28;
 
-    const t7Svg = `
-      <svg width="1200" height="1920" viewBox="0 0 1200 1920" xmlns="http://www.w3.org/2000/svg">
+  for (const cfg of SCREEN_CONFIGS) {
+    const srcPath = SCREENSHOT_MAP[cfg.key];
+    const outName = `${cfg.order}_tablet7_${cfg.key}.png`;
+    const outPath = path.join(DIRS.tablet7, outName);
+
+    const screenBuffer = await prepareScreenContent(srcPath, screenW, screenH, screenRadius);
+
+    const backgroundSvg = `
+      <svg width="${canvasW}" height="${canvasH}" viewBox="0 0 ${canvasW} ${canvasH}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="t7Grad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#059669" />
-            <stop offset="100%" stop-color="#047857" />
+            <stop offset="0%" stop-color="${cfg.gradientStart}" />
+            <stop offset="100%" stop-color="${cfg.gradientEnd}" />
           </linearGradient>
-          <filter id="t7Shadow" x="-10%" y="-5%" width="120%" height="115%">
-            <feDropShadow dx="0" dy="20" stdDeviation="28" flood-color="#000" flood-opacity="0.3"/>
+          <filter id="t7Shadow" x="-20%" y="-10%" width="140%" height="130%">
+            <feDropShadow dx="0" dy="24" stdDeviation="30" flood-color="#022C22" flood-opacity="0.38" />
           </filter>
         </defs>
 
-        <rect width="1200" height="1920" fill="#F1F5F9" />
-        <rect width="1200" height="380" fill="url(#t7Grad)" />
+        <rect width="${canvasW}" height="${canvasH}" fill="#F8FAFC" />
+        <rect width="${canvasW}" height="490" fill="url(#t7Grad)" />
 
-        <g transform="translate(140, 70)">
-          <rect x="0" y="0" width="380" height="40" rx="20" fill="rgba(255,255,255,0.25)" />
-          <text x="24" y="26" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="bold" fill="#FEF08A">${escapeXml(cfg.badge)}</text>
+        <circle cx="1060" cy="70" r="140" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="28" />
+
+        <!-- Badge -->
+        <g transform="translate(${canvasW / 2}, 75)">
+          <rect x="-240" y="0" width="480" height="44" rx="22" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" />
+          <text x="0" y="29" text-anchor="middle" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="800" fill="${cfg.badgeColor}">
+            ${escapeXml(cfg.badge)}
+          </text>
         </g>
 
-        <text x="140" y="180" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="900" fill="#FFFFFF">${escapeXml(cfg.title)}</text>
-        <text x="140" y="240" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="500" fill="#E6FFFA">${escapeXml(cfg.sub)}</text>
+        <!-- Title & Subtitle -->
+        <text x="${canvasW / 2}" y="190" text-anchor="middle" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="48" font-weight="900" fill="#FFFFFF">
+          ${escapeXml(cfg.title)}
+        </text>
+        <text x="${canvasW / 2}" y="250" text-anchor="middle" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="22" font-weight="500" fill="#E6FFFA">
+          ${escapeXml(cfg.subtitle)}
+        </text>
 
+        <!-- Tablet Mockup Bezel -->
         <g filter="url(#t7Shadow)">
-          <rect x="195" y="380" width="810" height="1430" rx="36" fill="#0F172A" />
+          <rect x="${tabletX}" y="${tabletY}" width="${tabletW}" height="${tabletH}" rx="${tabletRadius}" ry="${tabletRadius}" fill="#0F172A" stroke="#334155" stroke-width="2" />
         </g>
       </svg>
     `;
 
-    await sharp(Buffer.from(t7Svg))
-      .composite([{ input: screen7Buf, top: 395, left: 210 }])
-      .png({ quality: 95 })
-      .toFile(t7Path);
+    const overlaySvg = Buffer.from(`
+      <svg width="${canvasW}" height="${canvasH}" viewBox="0 0 ${canvasW} ${canvasH}" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="${canvasW / 2}" cy="${screenY + 12}" r="5" fill="#030712" />
+      </svg>
+    `);
 
-    console.log(`✓ Generated Tablet 7": ${t7Path}`);
-
-    // --- 10-Inch Tablet (1600 x 2560) ---
-    console.log(`Generating Google Play 10-Inch Tablet Screenshot (${key})...`);
-    const t10Path = path.join(DIRS.tablet10, `0${i + 1}_tablet10_${key}.png`);
-    const screen10Buf = await sharp(srcImg)
-      .resize({ width: 1040, height: 1880, fit: 'fill' })
+    await sharp(Buffer.from(backgroundSvg))
       .composite([
-        {
-          input: Buffer.from(`
-            <svg width="1040" height="1880">
-              <rect x="0" y="0" width="1040" height="1880" rx="38" ry="38" fill="none" stroke="#CBD5E1" stroke-width="5"/>
-            </svg>
-          `),
-          top: 0,
-          left: 0
-        }
+        { input: screenBuffer, top: screenY, left: screenX },
+        { input: overlaySvg, top: 0, left: 0 }
       ])
-      .toBuffer();
+      .png({ quality: 96 })
+      .toFile(outPath);
 
-    const t10Svg = `
-      <svg width="1600" height="2560" viewBox="0 0 1600 2560" xmlns="http://www.w3.org/2000/svg">
+    console.log(`✓ Tablet 7": ${outName}`);
+  }
+}
+
+/**
+ * 3. 10-INCH TABLET SCREENSHOTS (1600 x 2560)
+ */
+async function generateTablet10Screenshots() {
+  console.log('--- Generating 5x 10-Inch Tablet Screenshots (1600 x 2560) ---');
+  const canvasW = 1600;
+  const canvasH = 2560;
+
+  const tabletW = 1160;
+  const tabletH = 1910;
+  const tabletX = 220;
+  const tabletY = 550;
+  const tabletRadius = 48;
+
+  const screenInset = 20;
+  const screenW = tabletW - (screenInset * 2); // 1120
+  const screenH = tabletH - (screenInset * 2); // 1870
+  const screenX = tabletX + screenInset;
+  const screenY = tabletY + screenInset;
+  const screenRadius = 32;
+
+  for (const cfg of SCREEN_CONFIGS) {
+    const srcPath = SCREENSHOT_MAP[cfg.key];
+    const outName = `${cfg.order}_tablet10_${cfg.key}.png`;
+    const outPath = path.join(DIRS.tablet10, outName);
+
+    const screenBuffer = await prepareScreenContent(srcPath, screenW, screenH, screenRadius);
+
+    const backgroundSvg = `
+      <svg width="${canvasW}" height="${canvasH}" viewBox="0 0 ${canvasW} ${canvasH}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="t10Grad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#047857" />
-            <stop offset="100%" stop-color="#065F46" />
+            <stop offset="0%" stop-color="${cfg.gradientStart}" />
+            <stop offset="100%" stop-color="${cfg.gradientEnd}" />
           </linearGradient>
-          <filter id="t10Shadow" x="-10%" y="-5%" width="120%" height="115%">
-            <feDropShadow dx="0" dy="24" stdDeviation="32" flood-color="#000" flood-opacity="0.32"/>
+          <filter id="t10Shadow" x="-20%" y="-10%" width="140%" height="130%">
+            <feDropShadow dx="0" dy="32" stdDeviation="40" flood-color="#022C22" flood-opacity="0.4" />
           </filter>
         </defs>
 
-        <rect width="1600" height="2560" fill="#F1F5F9" />
-        <rect width="1600" height="500" fill="url(#t10Grad)" />
+        <rect width="${canvasW}" height="${canvasH}" fill="#F8FAFC" />
+        <rect width="${canvasW}" height="650" fill="url(#t10Grad)" />
 
-        <g transform="translate(180, 100)">
-          <rect x="0" y="0" width="460" height="54" rx="27" fill="rgba(255,255,255,0.22)" />
-          <text x="30" y="35" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="bold" fill="#FEF08A">${escapeXml(cfg.badge)}</text>
+        <circle cx="1450" cy="100" r="180" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="36" />
+
+        <!-- Badge -->
+        <g transform="translate(${canvasW / 2}, 100)">
+          <rect x="-290" y="0" width="580" height="56" rx="28" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" />
+          <text x="0" y="37" text-anchor="middle" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="800" fill="${cfg.badgeColor}">
+            ${escapeXml(cfg.badge)}
+          </text>
         </g>
 
-        <text x="180" y="240" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="900" fill="#FFFFFF">${escapeXml(cfg.title)}</text>
-        <text x="180" y="320" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="500" fill="#E6FFFA">${escapeXml(cfg.sub)}</text>
+        <!-- Title & Subtitle -->
+        <text x="${canvasW / 2}" y="250" text-anchor="middle" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="62" font-weight="900" fill="#FFFFFF">
+          ${escapeXml(cfg.title)}
+        </text>
+        <text x="${canvasW / 2}" y="330" text-anchor="middle" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="28" font-weight="500" fill="#E6FFFA">
+          ${escapeXml(cfg.subtitle)}
+        </text>
 
+        <!-- Tablet Mockup Bezel -->
         <g filter="url(#t10Shadow)">
-          <rect x="260" y="520" width="1080" height="1920" rx="46" fill="#0F172A" />
+          <rect x="${tabletX}" y="${tabletY}" width="${tabletW}" height="${tabletH}" rx="${tabletRadius}" ry="${tabletRadius}" fill="#0F172A" stroke="#334155" stroke-width="2.5" />
         </g>
       </svg>
     `;
 
-    await sharp(Buffer.from(t10Svg))
-      .composite([{ input: screen10Buf, top: 540, left: 280 }])
-      .png({ quality: 95 })
-      .toFile(t10Path);
+    const overlaySvg = Buffer.from(`
+      <svg width="${canvasW}" height="${canvasH}" viewBox="0 0 ${canvasW} ${canvasH}" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="${canvasW / 2}" cy="${screenY + 14}" r="6" fill="#030712" />
+      </svg>
+    `);
 
-    console.log(`✓ Generated Tablet 10": ${t10Path}`);
+    await sharp(Buffer.from(backgroundSvg))
+      .composite([
+        { input: screenBuffer, top: screenY, left: screenX },
+        { input: overlaySvg, top: 0, left: 0 }
+      ])
+      .png({ quality: 96 })
+      .toFile(outPath);
+
+    console.log(`✓ Tablet 10": ${outName}`);
   }
+}
+
+/**
+ * 4. FEATURE GRAPHIC (1024 x 500)
+ */
+async function generateFeatureGraphic() {
+  console.log('--- Generating Google Play Feature Graphic (1024 x 500) ---');
+  const targetPath = path.join(DIRS.feature, 'feature_graphic_1024x500.png');
+
+  // Load and resize logo
+  const logoBuf = await sharp(LOGO_PATH)
+    .resize({ width: 330, height: 110, fit: 'inside' })
+    .toBuffer();
+
+  // Dual elevated preview mockups
+  // Mockup 1: Primary Home screen preview (230 x 440)
+  const homeScreen = await prepareScreenContent(SCREENSHOT_MAP.home, 214, 420, 22);
+  const homeMockupSvg = Buffer.from(`
+    <svg width="230" height="440" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="fShadow" x="-20%" y="-10%" width="140%" height="130%">
+          <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#022C22" flood-opacity="0.5" />
+        </filter>
+      </defs>
+      <rect x="0" y="0" width="230" height="440" rx="30" ry="30" fill="#0F172A" stroke="#334155" stroke-width="2" filter="url(#fShadow)" />
+    </svg>
+  `);
+
+  const primaryMockup = await sharp(homeMockupSvg)
+    .composite([
+      { input: homeScreen, top: 10, left: 8 },
+      {
+        input: Buffer.from(`
+          <svg width="230" height="440" xmlns="http://www.w3.org/2000/svg">
+            <rect x="75" y="16" width="80" height="18" rx="9" fill="#030712" />
+          </svg>
+        `),
+        top: 0,
+        left: 0
+      }
+    ])
+    .png()
+    .toBuffer();
+
+  // Mockup 2: Secondary Cart/Category preview (190 x 370)
+  const cartScreen = await prepareScreenContent(SCREENSHOT_MAP.cart, 178, 354, 18);
+  const cartMockupSvg = Buffer.from(`
+    <svg width="190" height="370" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="cShadow" x="-20%" y="-10%" width="140%" height="130%">
+          <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#022C22" flood-opacity="0.4" />
+        </filter>
+      </defs>
+      <rect x="0" y="0" width="190" height="370" rx="24" ry="24" fill="#0F172A" stroke="#1E293B" stroke-width="1.5" filter="url(#cShadow)" />
+    </svg>
+  `);
+
+  const secondaryMockup = await sharp(cartMockupSvg)
+    .composite([{ input: cartScreen, top: 8, left: 6 }])
+    .png()
+    .toBuffer();
+
+  // Rich vector background
+  const bgSvg = `
+    <svg width="1024" height="500" viewBox="0 0 1024 500" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="fgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#022C22" />
+          <stop offset="40%" stop-color="#047857" />
+          <stop offset="100%" stop-color="#0F766E" />
+        </linearGradient>
+        <radialGradient id="fgGlow" cx="75%" cy="35%" r="55%">
+          <stop offset="0%" stop-color="#34D399" stop-opacity="0.38" />
+          <stop offset="100%" stop-color="#047857" stop-opacity="0" />
+        </radialGradient>
+      </defs>
+
+      <!-- Background -->
+      <rect width="1024" height="500" fill="url(#fgGrad)" />
+      <rect width="1024" height="500" fill="url(#fgGlow)" />
+
+      <!-- Decorative Pattern Elements -->
+      <circle cx="940" cy="70" r="160" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="32" />
+      <circle cx="560" cy="460" r="140" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="24" />
+
+      <!-- Left Content -->
+      <!-- White card container for logo -->
+      <rect x="56" y="44" width="350" height="84" rx="16" fill="#FFFFFF" />
+
+      <!-- Pill Badge -->
+      <g transform="translate(56, 146)">
+        <rect x="0" y="0" width="270" height="34" rx="17" fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.3)" stroke-width="1.2" />
+        <circle cx="18" cy="17" r="5" fill="#FDE047" />
+        <text x="32" y="23" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="800" fill="#FEF08A">
+          10-30 MINS EXPRESS DELIVERY
+        </text>
+      </g>
+
+      <!-- Main Headline -->
+      <text x="56" y="228" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="36" font-weight="900" fill="#FFFFFF" letter-spacing="-0.5">
+        Fresh Groceries &amp;
+      </text>
+      <text x="56" y="272" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="36" font-weight="900" fill="#FEF08A" letter-spacing="-0.5">
+        Daily Essentials
+      </text>
+
+      <!-- Subtitle -->
+      <text x="56" y="318" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#E6FFFA">
+        Fruits, Veggies, Dairy, Snacks &amp; Staples at Best Prices
+      </text>
+
+      <!-- Feature Pill Badges -->
+      <g transform="translate(56, 355)">
+        <rect x="0" y="0" width="145" height="34" rx="8" fill="rgba(0,0,0,0.22)" />
+        <text x="14" y="22" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FFFFFF">🍏 Farm Fresh</text>
+
+        <rect x="156" y="0" width="138" height="34" rx="8" fill="rgba(0,0,0,0.22)" />
+        <text x="14" y="22" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FFFFFF">⚡ Superfast</text>
+
+        <rect x="304" y="0" width="142" height="34" rx="8" fill="rgba(0,0,0,0.22)" />
+        <text x="14" y="22" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FFFFFF">💰 Best Deals</text>
+      </g>
+
+      <!-- Bottom Tag -->
+      <g transform="translate(56, 424)">
+        <text x="0" y="16" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#A7F3D0">
+          ⭐ 4.8★ Rated Grocery App • Cash on Delivery &amp; UPI Available
+        </text>
+      </g>
+    </svg>
+  `;
+
+  await sharp(Buffer.from(bgSvg))
+    .composite([
+      // Logo on white card
+      { input: logoBuf, top: 54, left: 66 },
+      // Secondary mockup (in background)
+      { input: secondaryMockup, top: 65, left: 565 },
+      // Primary mockup (in foreground)
+      { input: primaryMockup, top: 30, left: 730 }
+    ])
+    .png({ quality: 98 })
+    .toFile(targetPath);
+
+  console.log(`✓ Feature Graphic: feature_graphic_1024x500.png`);
 }
 
 async function main() {
   try {
-    console.log('--- Starting Play Store Graphics Generation ---');
-    await generateAppIcon();
-    await generateFeatureGraphic();
+    console.log('=== STARTING PRODUCTION PLAY STORE GRAPHICS GENERATION ===');
     await generatePhoneScreenshots();
-    await generateTabletScreenshots();
-    console.log('--- All Assets Successfully Generated! ---');
+    await generateTablet7Screenshots();
+    await generateTablet10Screenshots();
+    await generateFeatureGraphic();
+    console.log('=== ALL PLAY STORE ASSETS GENERATED SUCCESSFULLY! ===');
   } catch (err) {
-    console.error('Asset Generation Error:', err);
+    console.error('Fatal Asset Generation Error:', err);
     process.exit(1);
   }
 }
