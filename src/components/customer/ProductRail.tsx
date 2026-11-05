@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   FlatList,
   TouchableOpacity,
   Platform,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
@@ -48,6 +50,12 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
 
   // Lazy loading state: initially load 5 products, then batch 5-by-5 on scroll
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const totalProductsRef = useRef(products?.length || 0);
+
+  // Keep total count ref updated
+  useEffect(() => {
+    totalProductsRef.current = products?.length || 0;
+  }, [products]);
 
   // Reset to initial 5 items whenever the products collection updates
   useEffect(() => {
@@ -59,11 +67,26 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
     return products.slice(0, visibleCount);
   }, [products, visibleCount]);
 
-  const handleEndReached = useCallback(() => {
-    if (visibleCount < (products?.length || 0)) {
-      setVisibleCount(prev => Math.min(prev + PAGE_SIZE, products.length));
-    }
-  }, [visibleCount, products?.length]);
+  const loadMore = useCallback(() => {
+    setVisibleCount(prev => {
+      const total = totalProductsRef.current;
+      if (prev < total) {
+        return Math.min(prev + PAGE_SIZE, total);
+      }
+      return prev;
+    });
+  }, []);
+
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+      // Proactively trigger next batch when within 320px (~2 cards) from trailing edge
+      if (contentOffset.x + layoutMeasurement.width >= contentSize.width - 320) {
+        loadMore();
+      }
+    },
+    [loadMore]
+  );
 
   const renderItem = useCallback(
     ({ item }: { item: Product }) => (
@@ -150,11 +173,13 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         initialNumToRender={5}
-        maxToRenderPerBatch={5}
-        windowSize={3}
+        maxToRenderPerBatch={10}
+        windowSize={5}
         removeClippedSubviews={Platform.OS === 'android'}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.4}
+        onScroll={handleScroll}
+        scrollEventThrottle={32}
+        onEndReached={loadMore}
+        onEndReachedThreshold={1.2}
         renderItem={renderItem}
         ListFooterComponent={renderFooter}
       />
