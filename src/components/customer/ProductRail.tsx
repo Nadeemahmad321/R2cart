@@ -6,12 +6,12 @@ import {
   FlatList,
   TouchableOpacity,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
 import { Product } from '../../types';
 import { ProductCard } from './ProductCard';
+import { ProductCardSkeleton } from '../common/Skeleton';
 import { useLanguage } from '../../context/LanguageContext';
 
 interface ProductRailProps {
@@ -83,11 +83,11 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
     const totalCount = products?.length || 0;
     if (visibleCount < totalCount) {
       return (
-        <View style={styles.footerLoaderWrap}>
-          <ActivityIndicator size="small" color={Colors.primary} />
-          <Text style={styles.loadingMoreText}>
-            {visibleCount}/{totalCount}
-          </Text>
+        <View style={styles.skeletonFooterRow}>
+          <ProductCardSkeleton width={RAIL_CARD_WIDTH} />
+          {totalCount - visibleCount > 1 ? (
+            <ProductCardSkeleton width={RAIL_CARD_WIDTH} />
+          ) : null}
         </View>
       );
     }
@@ -226,19 +226,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 10,
   },
-  footerLoaderWrap: {
-    width: 64,
-    minHeight: 200,
-    justifyContent: 'center',
+  skeletonFooterRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    gap: 10,
     marginRight: 8,
-  },
-  loadingMoreText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#94A3B8',
-    marginTop: 6,
   },
   endSeeAllCard: {
     width: 104,
