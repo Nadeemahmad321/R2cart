@@ -92,7 +92,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = React.memo(({
     };
   }, [heroSlides.length]);
 
-  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
     const idx = Math.round(x / (BANNER_WIDTH + 12));
     if (idx >= 0 && idx < heroSlides.length && idx !== activeIdx) {
@@ -113,8 +113,8 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = React.memo(({
         snapToInterval={BANNER_WIDTH + 12}
         decelerationRate="fast"
         contentContainerStyle={styles.bannerList}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        scrollEventThrottle={32}
         getItemLayout={(_, index) => ({
           length: BANNER_WIDTH + 12,
           offset: (BANNER_WIDTH + 12) * index,

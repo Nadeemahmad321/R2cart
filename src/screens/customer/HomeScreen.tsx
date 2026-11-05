@@ -94,6 +94,19 @@ export const HomeScreen = ({ navigation }: any) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [gridDisplayCount, setGridDisplayCount] = useState<number>(20);
+  const [deferredReady, setDeferredReady] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Mount initial viewport first (HeroCarousel + CategoryGrid + Top 2 rails)
+    // Then smoothly mount remaining rails after brief delay for instant 60 FPS screen open
+    const timer = setTimeout(() => {
+      setDeferredReady(true);
+    }, 200);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
 
   const HOME_FEED_CACHE_KEY = '@r2cart_home_feed_cache';
 
@@ -545,37 +558,58 @@ export const HomeScreen = ({ navigation }: any) => {
       .slice(0, 10);
   }, [products]);
 
-  // Category product rails ordered by admin's categoryOrder
+  // High-performance single-pass O(N) grouping map for Category rails
   const allCategoryRails = useMemo(() => {
     if (orderedCategories.length === 0 || products.length === 0) return [];
+
+    const catMap = new Map<string, Product[]>();
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      if (!p || !p.id) continue;
+      const keys: string[] = [];
+      if ((p as any).categoryId) keys.push(String((p as any).categoryId));
+      if ((p as any).category?.id) keys.push(String((p as any).category.id));
+      if ((p as any).categorySlug) keys.push(String((p as any).categorySlug));
+      if ((p as any).category?.slug) keys.push(String((p as any).category.slug));
+      if (typeof p.category === 'string') keys.push(p.category);
+
+      for (let j = 0; j < keys.length; j++) {
+        const k = keys[j];
+        let arr = catMap.get(k);
+        if (!arr) {
+          arr = [];
+          catMap.set(k, arr);
+        }
+        arr.push(p);
+      }
+    }
+
     const rails: { category: Category; items: Product[] }[] = [];
     const seenCatKeys = new Set<string>();
 
-    for (const cat of orderedCategories) {
+    for (let i = 0; i < orderedCategories.length; i++) {
+      const cat = orderedCategories[i];
       if (!cat) continue;
       const catKey = String(cat.id || cat.slug || cat.name || '');
       if (seenCatKeys.has(catKey)) continue;
       seenCatKeys.add(catKey);
 
-      const seenProdIds = new Set<string>();
-      const catItems = products.filter(p => {
-        if (!p || !p.id || seenProdIds.has(p.id)) return false;
-        const match =
-          (p as any).categoryId === cat.id ||
-          (p as any).category?.id === cat.id ||
-          (p as any).categorySlug === cat.slug ||
-          (p as any).category?.slug === cat.slug ||
-          (typeof p.category === 'string' &&
-            (p.category === cat.slug || p.category === cat.name || p.category === cat.id));
-        if (match) {
-          seenProdIds.add(p.id);
-          return true;
+      const items = (cat.id && catMap.get(String(cat.id))) ||
+                    (cat.slug && catMap.get(String(cat.slug))) ||
+                    (cat.name && catMap.get(String(cat.name))) || [];
+      if (items.length > 0) {
+        const seenProd = new Set<string>();
+        const uniqueItems: Product[] = [];
+        for (let j = 0; j < items.length; j++) {
+          const item = items[j];
+          if (!seenProd.has(item.id)) {
+            seenProd.add(item.id);
+            uniqueItems.push(item);
+          }
         }
-        return false;
-      });
-
-      if (catItems.length > 0) {
-        rails.push({ category: cat, items: catItems });
+        if (uniqueItems.length > 0) {
+          rails.push({ category: cat, items: uniqueItems });
+        }
       }
     }
     return rails;
@@ -770,7 +804,8 @@ export const HomeScreen = ({ navigation }: any) => {
           case 'categoryRails': {
             if (section.comingSoon) return renderComingSoonCard();
             const maxCats = Number(section.maxCategories) || 8;
-            const railsToRender = allCategoryRails.slice(0, maxCats);
+            const allowedCount = deferredReady ? maxCats : Math.min(2, maxCats);
+            const railsToRender = allCategoryRails.slice(0, allowedCount);
             return (
               <View key={secKey}>
                 {railsToRender.map(({ category, items }, catIdx) => {
@@ -886,6 +921,7 @@ export const HomeScreen = ({ navigation }: any) => {
     topPicks,
     allCategoryRails,
     specialOffers,
+    deferredReady,
     products.length,
     handleBannerPress,
     handleCategoryPress,
@@ -1135,9 +1171,9 @@ export const HomeScreen = ({ navigation }: any) => {
           ]}
           columnWrapperStyle={styles.productRowWrapper}
           initialNumToRender={4}
-          maxToRenderPerBatch={6}
-          windowSize={5}
-          removeClippedSubviews={false}
+          maxToRenderPerBatch={4}
+          windowSize={3}
+          removeClippedSubviews={Platform.OS === 'android'}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
           showsVerticalScrollIndicator={false}
