@@ -117,15 +117,9 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
         </View>
       )}
 
-      {/* Bottom Badge Row: Dietary tag & ETA on Left, Backend Rating on Right */}
+      {/* Bottom Badge Row: Only Delivery ETA for clean Blinkit/Zepto appearance */}
       <View style={styles.badgeRow}>
         <View style={styles.badgeLeftRow}>
-          {dietInfo && (
-            <View style={[styles.dietPill, { backgroundColor: dietInfo.bgColor, borderColor: dietInfo.borderColor }]}>
-              <View style={[styles.dietDot, { backgroundColor: dietInfo.dotColor }]} />
-              <Text style={[styles.dietPillText, { color: dietInfo.textColor }]}>{dietInfo.label}</Text>
-            </View>
-          )}
           {showInstantEta ? (
             <View style={styles.deliveryPill}>
               <Feather name="zap" size={8.5} color="#059669" />
@@ -138,16 +132,6 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
             </View>
           ) : null}
         </View>
-
-        {hasRating && (
-          <View style={styles.ratingBadge}>
-            <Feather name="star" size={8.5} color="#047857" />
-            <Text style={styles.ratingVal}>{Number(rating).toFixed(1)}</Text>
-            {ratingCount ? (
-              <Text style={styles.ratingCountText}>({ratingCount})</Text>
-            ) : null}
-          </View>
-        )}
       </View>
     </View>
   );
