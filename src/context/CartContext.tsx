@@ -63,6 +63,8 @@ const mapBackendItemToCartItem = (bi: any, index: number = 0): CartItem => {
     deliveryScope: bi.deliveryScope || bi.product?.deliveryScope || 'LOCAL',
     orderMode: bi.orderMode || bi.product?.orderMode || 'DIRECT_ORDER',
     shippingFee: bi.shippingFee ? Number(bi.shippingFee) : (bi.product?.shippingFee ? Number(bi.product.shippingFee) : undefined),
+    shippingSoloOnly: Boolean(bi.shippingSoloOnly ?? bi.product?.shippingSoloOnly),
+    shippingMinOtherCartValue: bi.shippingMinOtherCartValue ? Number(bi.shippingMinOtherCartValue) : (bi.product?.shippingMinOtherCartValue ? Number(bi.product.shippingMinOtherCartValue) : undefined),
     minOrderQty: Math.max(1, Number(bi.minOrderQty || bi.product?.minOrderQty) || 1),
     dietaryPreference: bi.dietaryPreference || bi.product?.dietaryPreference || undefined,
   };
@@ -109,6 +111,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 deliveryScope: i.deliveryScope || 'LOCAL',
                 orderMode: i.orderMode || 'DIRECT_ORDER',
                 shippingFee: i.shippingFee ? Number(i.shippingFee) : undefined,
+                shippingSoloOnly: Boolean(i.shippingSoloOnly),
+                shippingMinOtherCartValue: i.shippingMinOtherCartValue ? Number(i.shippingMinOtherCartValue) : undefined,
                 minOrderQty: Math.max(1, Number(i.minOrderQty) || 1),
                 dietaryPreference: i.dietaryPreference || undefined,
               }));
@@ -251,6 +255,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           deliveryScope: product.deliveryScope || 'LOCAL',
           orderMode: product.orderMode || 'DIRECT_ORDER',
           shippingFee: product.shippingFee ? Number(product.shippingFee) : undefined,
+          shippingSoloOnly: Boolean(product.shippingSoloOnly),
+          shippingMinOtherCartValue: product.shippingMinOtherCartValue ? Number(product.shippingMinOtherCartValue) : undefined,
           minOrderQty: Math.max(1, Number(product.minOrderQty) || 1),
           dietaryPreference: product.dietaryPreference || undefined,
         };

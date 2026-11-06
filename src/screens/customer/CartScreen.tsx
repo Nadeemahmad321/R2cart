@@ -345,7 +345,7 @@ export const CartScreen = ({ route, navigation }: any) => {
   const deliveryRules = useMemo(() => {
     const isPanIndiaCart = validItems.length > 0 && validItems.every(i => i.deliveryScope === 'PAN_INDIA');
     if (isPanIndiaCart) {
-      const totalShippingFee = validItems.reduce((acc, itm) => acc + (Number(itm.shippingFee) || 0), 0);
+      const totalShippingFee = validItems.reduce((acc, itm) => acc + (Number(itm.shippingFee) || 0) * (Number(itm.quantity) || 1), 0);
       return {
         freeDeliveryThreshold: 0,
         deliveryFee: totalShippingFee,
@@ -592,7 +592,37 @@ export const CartScreen = ({ route, navigation }: any) => {
   const freePercent = freeThreshold > 0
     ? Math.min(100, Math.max(0, Math.round((itemTotal / freeThreshold) * 100)))
     : 100;
-  const effectiveDeliveryFee = itemTotal >= (freeThreshold || Infinity) ? 0 : Number(deliveryRules?.deliveryFee || 0);
+  // Calculate dynamic quantity-based and solo shipping fees
+  const extraShippingFees = useMemo(() => {
+    let extra = 0;
+    for (const itm of validItems) {
+      const feePerUnit = Math.max(0, Number(itm.shippingFee) || 0);
+      if (feePerUnit <= 0) continue;
+
+      const qty = Math.max(1, parseInt(String(itm.quantity), 10) || 1);
+      const soloOnly = Boolean(itm.shippingSoloOnly);
+      const minOtherCartValue = Math.max(0, Number(itm.shippingMinOtherCartValue) || 0);
+
+      if (soloOnly) {
+        const isSolo = validItems.length === 1;
+        if (isSolo) {
+          extra += feePerUnit * qty;
+        } else {
+          const itemLineTotal = Number(itm.price || 0) * qty;
+          const otherItemsSubtotal = Math.max(0, itemTotal - itemLineTotal);
+          if (minOtherCartValue > 0 && otherItemsSubtotal < minOtherCartValue) {
+            extra += feePerUnit * qty;
+          }
+        }
+      } else {
+        extra += feePerUnit * qty;
+      }
+    }
+    return extra;
+  }, [validItems, itemTotal]);
+
+  const baseDeliveryFee = itemTotal >= (freeThreshold || Infinity) ? 0 : Number(deliveryRules?.deliveryFee || 0);
+  const effectiveDeliveryFee = baseDeliveryFee + extraShippingFees;
   const finalTotal = Math.max(0, itemTotal + (itemTotal === 0 ? 0 : effectiveDeliveryFee) + tip - discountAmount);
 
   // Dynamic Out of Stock / Coming Soon / Insufficient Stock check for items in basket

@@ -48,6 +48,8 @@ export interface Product {
   deliveryScope?: 'LOCAL' | 'PAN_INDIA' | 'CUSTOM' | string;
   deliveryLocations?: string[] | string;
   shippingFee?: number;
+  shippingSoloOnly?: boolean;
+  shippingMinOtherCartValue?: number;
   orderMode?: 'DIRECT_ORDER' | 'CONTACT_REQUEST' | 'BOTH' | string;
   estimatedDelivery?: string;
   minOrderQty?: number;
@@ -104,6 +106,8 @@ export interface CartItem {
   deliveryScope?: 'LOCAL' | 'PAN_INDIA' | 'CUSTOM' | string;
   orderMode?: 'DIRECT_ORDER' | 'CONTACT_REQUEST' | 'BOTH' | string;
   shippingFee?: number;
+  shippingSoloOnly?: boolean;
+  shippingMinOtherCartValue?: number;
   minOrderQty?: number;
   dietaryPreference?: string;
 }
