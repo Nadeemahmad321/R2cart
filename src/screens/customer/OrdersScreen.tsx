@@ -911,10 +911,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 10,
+    minWidth: 0,
   },
   itemsThumbsRow: {
     flexDirection: 'row',
     marginRight: 8,
+    flexShrink: 0,
   },
   thumbBox: {
     width: 36,
@@ -954,6 +956,7 @@ const styles = StyleSheet.create({
   },
   itemsTextWrap: {
     flex: 1,
+    minWidth: 0,
   },
   itemsNamesText: {
     fontSize: 12.5,
@@ -967,6 +970,7 @@ const styles = StyleSheet.create({
   },
   priceSummaryCol: {
     alignItems: 'flex-end',
+    flexShrink: 0,
   },
   grandTotalText: {
     fontSize: 16,

@@ -1439,6 +1439,7 @@ const styles = StyleSheet.create({
   itemMetaCol: {
     flex: 1,
     marginRight: 10,
+    minWidth: 0,
   },
   itemName: {
     fontSize: 13,
@@ -1454,6 +1455,7 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '800',
     color: '#111827',
+    flexShrink: 0,
   },
   ratingCard: {
     marginTop: 8,
