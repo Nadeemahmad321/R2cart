@@ -124,6 +124,15 @@ const CartItemRow = React.memo(({ item, isLast, onUpdateQty, onDelete }: CartIte
         </Text>
         {item?.unit ? <Text style={styles.itemUnit}>{item.unit}</Text> : null}
 
+        {Number(item?.shippingFee || 0) > 0 ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F9FF', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, marginTop: 2, alignSelf: 'flex-start', borderWidth: 0.5, borderColor: '#BAE6FD' }}>
+            <Feather name="truck" size={9.5} color="#0284C7" style={{ marginRight: 3 }} />
+            <Text style={{ fontSize: 10, fontWeight: '600', color: '#0369A1' }}>
+              +₹{item.shippingFee}/item {item.shippingSoloOnly ? '(solo cart)' : ''}
+            </Text>
+          </View>
+        ) : null}
+
         {/* Warning Badges */}
         {isOutOfStock ? (
           <View style={styles.cartOosTag}>
@@ -593,8 +602,11 @@ export const CartScreen = ({ route, navigation }: any) => {
     ? Math.min(100, Math.max(0, Math.round((itemTotal / freeThreshold) * 100)))
     : 100;
   // Calculate dynamic quantity-based and solo shipping fees
-  const extraShippingFees = useMemo(() => {
+  const shippingBreakdown = useMemo(() => {
     let extra = 0;
+    const itemSurcharges: Array<{ id: string; name: string; qty: number; feePerUnit: number; totalFee: number }> = [];
+    let waiveSuggestion: { productName: string; amountNeeded: number; feeToSave: number } | null = null;
+
     for (const itm of validItems) {
       const feePerUnit = Math.max(0, Number(itm.shippingFee) || 0);
       if (feePerUnit <= 0) continue;
@@ -602,25 +614,52 @@ export const CartScreen = ({ route, navigation }: any) => {
       const qty = Math.max(1, parseInt(String(itm.quantity), 10) || 1);
       const soloOnly = Boolean(itm.shippingSoloOnly);
       const minOtherCartValue = Math.max(0, Number(itm.shippingMinOtherCartValue) || 0);
+      const itemLineTotal = Number(itm.price || 0) * qty;
+      const otherItemsSubtotal = Math.max(0, itemTotal - itemLineTotal);
 
+      let feeApplied = 0;
       if (soloOnly) {
         const isSolo = validItems.length === 1;
         if (isSolo) {
-          extra += feePerUnit * qty;
+          feeApplied = feePerUnit * qty;
+          if (minOtherCartValue > 0 && !waiveSuggestion) {
+            waiveSuggestion = {
+              productName: itm.name,
+              amountNeeded: Math.max(1, Math.ceil(minOtherCartValue)),
+              feeToSave: feeApplied,
+            };
+          }
         } else {
-          const itemLineTotal = Number(itm.price || 0) * qty;
-          const otherItemsSubtotal = Math.max(0, itemTotal - itemLineTotal);
           if (minOtherCartValue > 0 && otherItemsSubtotal < minOtherCartValue) {
-            extra += feePerUnit * qty;
+            feeApplied = feePerUnit * qty;
+            if (!waiveSuggestion) {
+              waiveSuggestion = {
+                productName: itm.name,
+                amountNeeded: Math.max(1, Math.ceil(minOtherCartValue - otherItemsSubtotal)),
+                feeToSave: feeApplied,
+              };
+            }
           }
         }
       } else {
-        extra += feePerUnit * qty;
+        feeApplied = feePerUnit * qty;
+      }
+
+      if (feeApplied > 0) {
+        extra += feeApplied;
+        itemSurcharges.push({
+          id: String(itm.productId || itm.id),
+          name: itm.name,
+          qty,
+          feePerUnit,
+          totalFee: feeApplied,
+        });
       }
     }
-    return extra;
+    return { extraFees: extra, itemSurcharges, waiveSuggestion };
   }, [validItems, itemTotal]);
 
+  const extraShippingFees = shippingBreakdown.extraFees;
   const baseDeliveryFee = itemTotal >= (freeThreshold || Infinity) ? 0 : Number(deliveryRules?.deliveryFee || 0);
   const effectiveDeliveryFee = baseDeliveryFee + extraShippingFees;
   const finalTotal = Math.max(0, itemTotal + (itemTotal === 0 ? 0 : effectiveDeliveryFee) + tip - discountAmount);
@@ -764,7 +803,7 @@ export const CartScreen = ({ route, navigation }: any) => {
       const orderPayload = {
         addressId: selectedAddress.id,
         items: validItems.map(i => ({
-          productId: i.productId,
+          productId: (i.variantId && i.variantId !== 'default') ? i.variantId : i.productId,
           quantity: Math.max(1, Number(i.quantity) || 1),
         })),
         couponCode: appliedCoupon?.code || undefined,
@@ -1268,6 +1307,15 @@ export const CartScreen = ({ route, navigation }: any) => {
           </View>
         </View>
 
+        {shippingBreakdown.waiveSuggestion ? (
+          <View style={{ backgroundColor: '#FFFBEB', marginHorizontal: 16, marginTop: 8, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FDE68A', flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ fontSize: 16, marginRight: 8 }}>💡</Text>
+            <Text style={{ fontSize: 11.5, color: '#92400E', flex: 1, lineHeight: 16 }}>
+              Add <Text style={{ fontWeight: '700' }}>₹{shippingBreakdown.waiveSuggestion.amountNeeded}</Text> more of other groceries to get <Text style={{ fontWeight: '700' }}>FREE delivery</Text> on {shippingBreakdown.waiveSuggestion.productName} (save ₹{shippingBreakdown.waiveSuggestion.feeToSave})!
+            </Text>
+          </View>
+        ) : null}
+
         {/* Flat Section Divider */}
         <View style={styles.flatSectionDivider} />
 
@@ -1524,11 +1572,33 @@ export const CartScreen = ({ route, navigation }: any) => {
           </View>
 
           <View style={styles.billRow}>
-            <Text style={styles.billLabel}>{t('deliveryFee', 'Delivery Fee')}</Text>
+            <View>
+              <Text style={styles.billLabel}>{t('deliveryFee', 'Delivery Fee')}</Text>
+              {freeThreshold > 0 && (
+                <Text style={{ fontSize: 10, color: '#64748B' }}>
+                  {itemTotal >= freeThreshold ? 'Base delivery waived' : `Free on orders above ₹${freeThreshold}`}
+                </Text>
+              )}
+            </View>
             <Text style={[styles.billValue, effectiveDeliveryFee === 0 && styles.freeValue]}>
               {effectiveDeliveryFee === 0 ? t('free', 'FREE') : `₹${effectiveDeliveryFee}`}
             </Text>
           </View>
+
+          {extraShippingFees > 0 && (
+            <View style={{ backgroundColor: '#F8FAFC', padding: 8, borderRadius: 6, marginVertical: 3, borderWidth: 1, borderColor: '#E2E8F0' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: '#334155' }}>Includes Item Delivery Charge:</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#0F172A' }}>+₹{extraShippingFees}</Text>
+              </View>
+              {shippingBreakdown.itemSurcharges.map(sc => (
+                <View key={sc.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 }}>
+                  <Text style={{ fontSize: 10.5, color: '#64748B' }}>• {sc.name} (₹{sc.feePerUnit} × {sc.qty})</Text>
+                  <Text style={{ fontSize: 10.5, color: '#64748B' }}>₹{sc.totalFee}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {discountAmount > 0 && (
             <View style={styles.billRow}>

@@ -358,6 +358,17 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
               </View>
             )}
 
+            {Number(product.shippingFee || 0) > 0 && (
+              <View style={[styles.etaPill, { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD', borderWidth: 1 }]}>
+                <Feather name="package" size={12} color="#0284C7" style={{ marginRight: 4 }} />
+                <Text style={[styles.etaText, { color: '#0369A1' }]}>
+                  {lang === 'hi'
+                    ? `डिलीवरी: ₹${product.shippingFee}/पीस ${product.shippingSoloOnly ? '(अकेले ऑर्डर पर)' : ''}`
+                    : `Delivery: ₹${product.shippingFee}/item ${product.shippingSoloOnly ? '(solo cart)' : ''}`}
+                </Text>
+              </View>
+            )}
+
             {product.rating != null && Number(product.rating) > 0 ? (
               <View style={styles.ratingBadge}>
                 <Feather name="star" size={11} color="#047857" style={{ marginRight: 3 }} />
