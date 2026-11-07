@@ -9,7 +9,6 @@ import { useFavorites } from '../../context/FavoritesContext';
 import { useCart } from '../../context/CartContext';
 import { dataCache } from '../../services/dataCache';
 import { ProductEnquiryModal } from './ProductEnquiryModal';
-import { getDietaryInfo, DietaryInfo } from '../../utils/productDetails';
 
 const { width } = Dimensions.get('window');
 export const PRODUCT_ITEM_WIDTH = (width - 44) / 2;
@@ -17,8 +16,6 @@ export const PRODUCT_ITEM_WIDTH = (width - 44) / 2;
 interface ProductMediaProps {
   imgUri?: string;
   discount: number;
-  rating?: number | null;
-  ratingCount?: number;
   isFav?: boolean;
   onToggleFav?: () => void;
   isOutOfStock?: boolean;
@@ -26,7 +23,6 @@ interface ProductMediaProps {
   stock?: number;
   deliveryScope?: string;
   orderMode?: string;
-  dietInfo?: DietaryInfo | null;
 }
 
 function optimizeThumb(url?: string | null, targetWidth = 240): string {
@@ -43,8 +39,6 @@ function optimizeThumb(url?: string | null, targetWidth = 240): string {
 const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
   imgUri,
   discount,
-  rating,
-  ratingCount,
   isFav,
   onToggleFav,
   isOutOfStock,
@@ -52,12 +46,10 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
   stock,
   deliveryScope,
   orderMode,
-  dietInfo,
 }) => {
   const { lang, t, tEta } = useLanguage();
   const optimizedUri = useMemo(() => optimizeThumb(imgUri, 320), [imgUri]);
   const imageSource = useMemo(() => (optimizedUri ? { uri: optimizedUri } : null), [optimizedUri]);
-  const hasRating = rating != null && Number(rating) > 0;
   const isPanIndia = deliveryScope === 'PAN_INDIA';
   const isContactOnly = orderMode === 'CONTACT_REQUEST';
   const showInstantEta = !isContactOnly && !isPanIndia && deliveryScope !== 'CUSTOM';
@@ -193,7 +185,6 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
   const unit = product.unit || (product.variants && product.variants[0]?.unit) || '1 unit';
   const imgUri = product.imageUrl || product.image || (product.images && product.images[0]);
   const minOrderQty = Math.max(1, Number(product.minOrderQty) || 1);
-  const dietInfo = useMemo(() => getDietaryInfo(product), [product]);
 
   const handleAddPress = () => {
     if (hasMultiplePacks) {
@@ -220,8 +211,6 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
         <ProductMedia
           imgUri={imgUri}
           discount={discount}
-          rating={product.rating}
-          ratingCount={product.ratingCount}
           isFav={isFav}
           onToggleFav={() => toggleFavorite(product)}
           isOutOfStock={isOutOfStock}
@@ -229,7 +218,6 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
           stock={addedPack?.stock !== undefined ? Number(addedPack.stock) : (product.stock !== undefined ? Number(product.stock) : undefined)}
           deliveryScope={product.deliveryScope}
           orderMode={product.orderMode}
-          dietInfo={dietInfo}
         />
 
         {/* Product Details with Subtle Line Card Outline */}
@@ -555,24 +543,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     marginRight: 4,
   },
-  dietPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 4.5,
-    paddingVertical: 1.5,
-    borderRadius: 5,
-    borderWidth: 0.5,
-  },
-  dietDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    marginRight: 3,
-  },
-  dietPillText: {
-    fontSize: 8,
-    fontWeight: '800',
-  },
   deliveryPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -604,29 +574,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#6D28D9',
     marginLeft: 2,
-  },
-  // Website .card-rating-badge
-  ratingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(220, 252, 231, 0.95)',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 5,
-  },
-  ratingVal: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: '#047857',
-    marginLeft: 2,
-  },
-  ratingCountText: {
-    fontSize: 7.5,
-    fontWeight: '700',
-    color: '#059669',
-    marginLeft: 1.5,
   },
   productImg: {
     width: '100%',

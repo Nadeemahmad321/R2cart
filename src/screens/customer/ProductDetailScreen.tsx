@@ -336,13 +336,6 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
         {/* Product Details Header Card */}
         <View style={styles.detailSection}>
           <View style={styles.badgeTopRow}>
-            {dietInfo && (
-              <View style={[styles.dietaryPill, { backgroundColor: dietInfo.bgColor, borderColor: dietInfo.borderColor }]}>
-                <View style={[styles.dietaryDot, { backgroundColor: dietInfo.dotColor }]} />
-                <Text style={[styles.dietaryText, { color: dietInfo.textColor }]}>{dietInfo.label}</Text>
-              </View>
-            )}
-
             {product.orderMode !== 'CONTACT_REQUEST' && product.deliveryScope !== 'PAN_INDIA' && (
               <View style={styles.etaPill}>
                 <Feather name="zap" size={12} color={Colors.primaryDark} style={{ marginRight: 4 }} />
@@ -368,16 +361,6 @@ export const ProductDetailScreen = ({ route, navigation }: any) => {
                 </Text>
               </View>
             )}
-
-            {product.rating != null && Number(product.rating) > 0 ? (
-              <View style={styles.ratingBadge}>
-                <Feather name="star" size={11} color="#047857" style={{ marginRight: 3 }} />
-                <Text style={styles.ratingVal}>{Number(product.rating).toFixed(1)}</Text>
-                {product.ratingCount ? (
-                  <Text style={styles.ratingCount}> ({product.ratingCount})</Text>
-                ) : null}
-              </View>
-            ) : null}
           </View>
 
           {/* Brand & Category Breadcrumb */}
@@ -862,8 +845,10 @@ const styles = StyleSheet.create({
   },
   badgeTopRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
     marginBottom: 8,
   },
   etaPill: {
