@@ -243,19 +243,19 @@ async function generatePhoneScreenshots() {
   const canvasW = 1080;
   const canvasH = 2280;
 
-  // Phone Mockup Dimensions
-  const phoneW = 840;
-  const phoneH = 1680;
-  const phoneX = (canvasW - phoneW) / 2; // 120
-  const phoneY = 490;
-  const phoneRadius = 52;
+  // Phone Mockup Dimensions (Sleek, refined flagship proportions)
+  const phoneW = 710;
+  const phoneH = 1460;
+  const phoneX = (canvasW - phoneW) / 2; // 185 (clean 185px side margins)
+  const phoneY = 530;
+  const phoneRadius = 48;
 
-  const bezelWidth = 14;
-  const screenW = phoneW - (bezelWidth * 2); // 812
-  const screenH = phoneH - (bezelWidth * 2); // 1652
-  const screenX = phoneX + bezelWidth;       // 134
-  const screenY = phoneY + bezelWidth;       // 504
-  const screenRadius = 40;
+  const bezelWidth = 11;
+  const screenW = phoneW - (bezelWidth * 2); // 688
+  const screenH = phoneH - (bezelWidth * 2); // 1438
+  const screenX = phoneX + bezelWidth;       // 196
+  const screenY = phoneY + bezelWidth;       // 541
+  const screenRadius = 38;
 
   for (const cfg of SCREEN_CONFIGS) {
     const srcPath = SCREENSHOT_MAP[cfg.key];
@@ -264,22 +264,22 @@ async function generatePhoneScreenshots() {
     const screenBuffer = await prepareScreenContent(srcPath, screenW, screenH, screenRadius);
 
     // Dynamic Island dimensions
-    const islandW = 126;
-    const islandH = 30;
+    const islandW = 114;
+    const islandH = 26;
     const islandX = screenX + (screenW - islandW) / 2;
-    const islandY = screenY + 12;
+    const islandY = screenY + 11;
 
     // Floating Card 1 (Top-Right overlap)
     const card1W = 340;
-    const card1H = 82;
-    const card1X = canvasW - card1W - 40;
-    const card1Y = phoneY + 130;
+    const card1H = 80;
+    const card1X = canvasW - card1W - 40; // 700
+    const card1Y = phoneY + 140;
 
     // Floating Card 2 (Bottom-Left overlap)
     const card2W = 340;
-    const card2H = 82;
+    const card2H = 80;
     const card2X = 40;
-    const card2Y = phoneY + phoneH - 170;
+    const card2Y = phoneY + phoneH - 150;
 
     // Background SVG with full-bleed mesh, lighting glows, typography, titanium frame & drop shadows
     const backgroundSvg = `
@@ -450,18 +450,18 @@ async function generateTablet7Screenshots() {
   const canvasW = 1200;
   const canvasH = 1920;
 
-  const tabletW = 860;
-  const tabletH = 1380;
-  const tabletX = (canvasW - tabletW) / 2; // 170
-  const tabletY = 440;
-  const tabletRadius = 44;
+  const tabletW = 760;
+  const tabletH = 1240;
+  const tabletX = (canvasW - tabletW) / 2; // 220
+  const tabletY = 470;
+  const tabletRadius = 40;
 
-  const bezelWidth = 14;
-  const screenW = tabletW - (bezelWidth * 2); // 832
-  const screenH = tabletH - (bezelWidth * 2); // 1352
-  const screenX = tabletX + bezelWidth;       // 184
-  const screenY = tabletY + bezelWidth;       // 454
-  const screenRadius = 34;
+  const bezelWidth = 12;
+  const screenW = tabletW - (bezelWidth * 2); // 736
+  const screenH = tabletH - (bezelWidth * 2); // 1216
+  const screenX = tabletX + bezelWidth;       // 232
+  const screenY = tabletY + bezelWidth;       // 482
+  const screenRadius = 30;
 
   for (const cfg of SCREEN_CONFIGS) {
     const srcPath = SCREENSHOT_MAP[cfg.key];
@@ -595,18 +595,18 @@ async function generateTablet10Screenshots() {
   const canvasW = 1600;
   const canvasH = 2560;
 
-  const tabletW = 1180;
-  const tabletH = 1860;
-  const tabletX = (canvasW - tabletW) / 2; // 210
-  const tabletY = 580;
-  const tabletRadius = 54;
+  const tabletW = 1040;
+  const tabletH = 1660;
+  const tabletX = (canvasW - tabletW) / 2; // 280
+  const tabletY = 620;
+  const tabletRadius = 48;
 
-  const bezelWidth = 18;
-  const screenW = tabletW - (bezelWidth * 2); // 1144
-  const screenH = tabletH - (bezelWidth * 2); // 1824
-  const screenX = tabletX + bezelWidth;       // 228
-  const screenY = tabletY + bezelWidth;       // 598
-  const screenRadius = 42;
+  const bezelWidth = 16;
+  const screenW = tabletW - (bezelWidth * 2); // 1008
+  const screenH = tabletH - (bezelWidth * 2); // 1628
+  const screenX = tabletX + bezelWidth;       // 296
+  const screenY = tabletY + bezelWidth;       // 636
+  const screenRadius = 36;
 
   for (const cfg of SCREEN_CONFIGS) {
     const srcPath = SCREENSHOT_MAP[cfg.key];
