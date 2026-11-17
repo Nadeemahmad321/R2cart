@@ -2,6 +2,7 @@
  * @format
  */
 
+import { registerRootComponent } from 'expo';
 import { AppRegistry } from 'react-native';
 import App from './App';
 import { name as appName } from './app.json';
@@ -17,6 +18,7 @@ try {
   console.log('[FCM Background Registration Notice]: Native Firebase module not linked in current APK.', e?.message);
 }
 
+registerRootComponent(App);
 AppRegistry.registerComponent(appName, () => App);
 
 

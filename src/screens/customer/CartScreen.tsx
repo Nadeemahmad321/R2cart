@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -271,13 +271,29 @@ export const CartScreen = ({ route, navigation }: any) => {
     isOpenNow: true,
   });
 
-  const fetchSlots = useCallback(async (dateStr?: string) => {
+  const [slotsCache, setSlotsCache] = useState<Record<string, any[]>>({});
+  const lastFetchedDateRef = useRef<string | null>(null);
+
+  const fetchSlots = useCallback(async (dateStr?: string, forceRefresh = false) => {
     const dateToQuery = dateStr || selectedDate;
+    
+    // Serve immediately from memory cache if available and not forcing refresh
+    if (!forceRefresh && slotsCache[dateToQuery]) {
+      const cached = slotsCache[dateToQuery];
+      setSlots(cached);
+      setSelectedSlot((prev: any) => {
+        if (prev && cached.some((s: any) => s.id === prev.id && s.isAvailable)) return prev;
+        return cached.find((s: any) => s.isAvailable) || null;
+      });
+      return;
+    }
+
     setLoadingSlots(true);
     try {
       const res = await api.getDeliverySlots(dateToQuery);
       const list = Array.isArray(res.data) ? res.data : [];
       setSlots(list);
+      setSlotsCache(prev => ({ ...prev, [dateToQuery]: list }));
       setSelectedSlot((prev: any) => {
         if (prev && list.some((s: any) => s.id === prev.id && s.isAvailable)) return prev;
         return list.find((s: any) => s.isAvailable) || null;
@@ -288,7 +304,7 @@ export const CartScreen = ({ route, navigation }: any) => {
     } finally {
       setLoadingSlots(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, slotsCache]);
 
   const fetchStoreSchedule = useCallback(async () => {
     try {
@@ -313,10 +329,9 @@ export const CartScreen = ({ route, navigation }: any) => {
           storeStatus: effective.storeStatus || effective.status,
         });
 
-        // If instant delivery is currently closed/disabled, switch automatically to SCHEDULED
+        // Only switch automatically to SCHEDULED if immediate delivery is restricted
         if (!canImmediate) {
           setDeliveryType('SCHEDULED');
-          fetchSlots();
         } else if (canImmediate && !canScheduled) {
           setDeliveryType('INSTANT');
         }
@@ -324,29 +339,35 @@ export const CartScreen = ({ route, navigation }: any) => {
     } catch {
       // Keep defaults
     }
-  }, [fetchSlots]);
+  }, []);
 
   // Dynamic emergency status derived directly from backend settings & customer's selected address (5 varieties)
   const emergencyInfo = useMemo(() => {
     return dataCache.getEmergencyInfo(selectedAddress);
   }, [selectedAddress, storeSchedule]);
 
-  // Auto-switch delivery mode if current mode is restricted by emergency rules
+  // Auto-switch delivery mode only if active emergency strictly prevents the currently selected mode
   useEffect(() => {
-    if (emergencyInfo.isImmediatePaused && !emergencyInfo.isScheduledPaused && deliveryType === 'INSTANT') {
-      setDeliveryType('SCHEDULED');
-      if (!slots.length) fetchSlots(selectedDate);
-    } else if (emergencyInfo.isScheduledPaused && !emergencyInfo.isImmediatePaused && deliveryType === 'SCHEDULED') {
-      setDeliveryType('INSTANT');
+    if (emergencyInfo.isEmergencyActive) {
+      if (emergencyInfo.isImmediatePaused && !emergencyInfo.isScheduledPaused && deliveryType === 'INSTANT') {
+        setDeliveryType('SCHEDULED');
+      } else if (emergencyInfo.isScheduledPaused && !emergencyInfo.isImmediatePaused && deliveryType === 'SCHEDULED') {
+        setDeliveryType('INSTANT');
+      }
     }
   }, [
+    emergencyInfo.isEmergencyActive,
     emergencyInfo.isImmediatePaused,
     emergencyInfo.isScheduledPaused,
     deliveryType,
-    slots.length,
-    selectedDate,
-    fetchSlots,
   ]);
+
+  // Load slots whenever deliveryType becomes SCHEDULED or selectedDate changes
+  useEffect(() => {
+    if (deliveryType === 'SCHEDULED') {
+      fetchSlots(selectedDate);
+    }
+  }, [deliveryType, selectedDate, fetchSlots]);
 
   // Dynamic backend delivery data (villages, areas, settings)
   const [deliveryData, setDeliveryData] = useState<{
@@ -543,13 +564,13 @@ export const CartScreen = ({ route, navigation }: any) => {
       fetchAddresses(false);
       fetchStoreSchedule();
 
-      // Periodic check for emergency auto-expiration every 10s while CartScreen is focused
+      // Periodic check for emergency auto-expiration every 15s while CartScreen is focused
       const timer = setInterval(() => {
         const em = dataCache.getEmergencyInfo(selectedAddress);
-        if (!em.isEmergencyActive) {
+        if (em.isEmergencyActive) {
           fetchStoreSchedule();
         }
-      }, 10000);
+      }, 15000);
 
       return () => clearInterval(timer);
     }, [syncCartWithBackend, fetchAddresses, fetchStoreSchedule, selectedAddress])
