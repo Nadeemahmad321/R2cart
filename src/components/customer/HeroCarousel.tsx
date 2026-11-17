@@ -115,12 +115,13 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = React.memo(({
         contentContainerStyle={styles.bannerList}
         onMomentumScrollEnd={onMomentumScrollEnd}
         scrollEventThrottle={32}
+        removeClippedSubviews={false}
         getItemLayout={(_, index) => ({
           length: BANNER_WIDTH + 12,
           offset: (BANNER_WIDTH + 12) * index,
           index,
         })}
-        keyExtractor={(item, i) => item.id || `hero_${i}`}
+        keyExtractor={(item) => item.id || `hero_${item.title || ''}`}
         renderItem={({ item, index }) => {
           const isCream = item.isCream !== undefined ? Boolean(item.isCream) : index % 2 === 1;
           const kicker = item.kicker || 'R2CART FRESH';

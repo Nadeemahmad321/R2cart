@@ -55,11 +55,12 @@ export const CampaignRail: React.FC<CampaignRailProps> = React.memo(({
       <FlatList
         horizontal
         data={banners}
-        keyExtractor={(item, idx) => item.id || `campaign_${idx}`}
+        keyExtractor={(item) => item.id || `campaign_${item.title || ''}`}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         snapToInterval={CARD_WIDTH + 12}
         decelerationRate="fast"
+        removeClippedSubviews={false}
         renderItem={({ item, index }) => {
           const bgCol = GRADIENT_COLORS[index % GRADIENT_COLORS.length];
           const ctaText = item.ctaText || 'Claim Offer Now';

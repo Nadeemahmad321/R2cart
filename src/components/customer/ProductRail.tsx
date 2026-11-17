@@ -48,7 +48,7 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
 }) => {
   const { t, tCat } = useLanguage();
 
-  // Lazy loading state: initially load 5 products, then batch 5-by-5 on scroll
+  // Lazy loading state: initially load 8 products, batch 6-by-6 on scroll
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const totalProductsRef = useRef(products?.length || 0);
 
@@ -57,10 +57,12 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
     totalProductsRef.current = products?.length || 0;
   }, [products]);
 
-  // Reset to initial 5 items whenever the products collection updates
+  // Only reset if products array count shrunk or became empty (do NOT reset on minor re-renders)
   useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [products]);
+    if (!products || products.length === 0) {
+      setVisibleCount(PAGE_SIZE);
+    }
+  }, [products?.length]);
 
   const visibleProducts = useMemo(() => {
     if (!products || products.length === 0) return [];
@@ -169,13 +171,13 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
       <FlatList
         horizontal
         data={visibleProducts}
-        keyExtractor={(item, index) => `rail_${item.id || 'itm'}_${index}`}
+        keyExtractor={(item) => `rail_${item.id || 'itm'}`}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         initialNumToRender={5}
-        maxToRenderPerBatch={10}
+        maxToRenderPerBatch={6}
         windowSize={5}
-        removeClippedSubviews={Platform.OS === 'android'}
+        removeClippedSubviews={false}
         onScroll={handleScroll}
         scrollEventThrottle={32}
         onEndReached={loadMore}

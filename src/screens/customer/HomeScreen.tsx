@@ -359,14 +359,19 @@ export const HomeScreen = ({ navigation }: any) => {
     }
   }, [user]);
 
-  // Refresh addresses & store settings whenever user returns to HomeScreen, plus periodic emergency check
+  // Refresh addresses & store settings whenever user returns to HomeScreen
   useFocusEffect(
     useCallback(() => {
-      // Refresh settings on focus
+      // Refresh settings silently on focus only
       api.getSettings().then(res => {
         if (res.data) {
           dataCache.setSettings(res.data);
-          setStoreSettings(res.data);
+          // Only update state if values actually changed to avoid re-rendering entire screen
+          setStoreSettings((prev: any) => {
+            const prevStr = JSON.stringify(prev?.effectiveStatus);
+            const nextStr = JSON.stringify(res.data?.effectiveStatus);
+            return prevStr === nextStr ? prev : res.data;
+          });
         }
       }).catch(() => {});
 
@@ -406,22 +411,7 @@ export const HomeScreen = ({ navigation }: any) => {
         };
         checkTwoHourAddressPrompt();
       }
-
-      // Interval to check if emergency has expired and refresh settings automatically
-      const interval = setInterval(() => {
-        const em = dataCache.getEmergencyInfo(currentAddress);
-        if (!em.isEmergencyActive) {
-          api.getSettings().then(res => {
-            if (res.data) {
-              dataCache.setSettings(res.data);
-              setStoreSettings(res.data);
-            }
-          }).catch(() => {});
-        }
-      }, 10000);
-
-      return () => clearInterval(interval);
-    }, [user, currentAddress])
+    }, [user])
   );
 
   const onRefresh = useCallback(() => {
@@ -1189,7 +1179,7 @@ export const HomeScreen = ({ navigation }: any) => {
         <FlatList
           data={displayedGridProducts}
           renderItem={renderProductItem}
-          keyExtractor={(item, index) => `${item.id || 'prod'}_${index}`}
+          keyExtractor={(item) => String(item.id || 'prod')}
           numColumns={2}
           ListHeaderComponent={renderListHeader}
           contentContainerStyle={[
@@ -1197,10 +1187,10 @@ export const HomeScreen = ({ navigation }: any) => {
             { paddingBottom: 110 + insets.bottom },
           ]}
           columnWrapperStyle={styles.productRowWrapper}
-          initialNumToRender={4}
-          maxToRenderPerBatch={4}
-          windowSize={3}
-          removeClippedSubviews={Platform.OS === 'android'}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          removeClippedSubviews={false}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
           showsVerticalScrollIndicator={false}
