@@ -52,6 +52,12 @@ react {
 
     /* Autolinking */
     autolinkLibrariesWithApp()
+    //
+    // Added by install-expo-modules
+    def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
+    entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", projectRoot, "android", "absolute"].execute(null, rootDir).text.trim())
+    cliFile = new File(["node", "-e", "console.log(require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json', { paths: [process.argv[1]] })] }))", projectRoot].execute(null, rootDir).text.trim())
+    bundleCommand = "export:embed"
 }
 
 /**
@@ -82,8 +88,8 @@ android {
         applicationId "com.r2cart"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "1.0.3"
+        versionCode 6
+        versionName "1.0.5"
     }
     splits {
         abi {

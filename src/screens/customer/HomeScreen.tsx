@@ -359,9 +359,17 @@ export const HomeScreen = ({ navigation }: any) => {
     }
   }, [user]);
 
-  // Refresh addresses & check 2-hour prompt whenever user returns to HomeScreen
+  // Refresh addresses & store settings whenever user returns to HomeScreen, plus periodic emergency check
   useFocusEffect(
     useCallback(() => {
+      // Refresh settings on focus
+      api.getSettings().then(res => {
+        if (res.data) {
+          dataCache.setSettings(res.data);
+          setStoreSettings(res.data);
+        }
+      }).catch(() => {});
+
       if (user) {
         api.getAddresses().then(res => {
           if (res.data && Array.isArray(res.data)) {
@@ -398,7 +406,22 @@ export const HomeScreen = ({ navigation }: any) => {
         };
         checkTwoHourAddressPrompt();
       }
-    }, [user])
+
+      // Interval to check if emergency has expired and refresh settings automatically
+      const interval = setInterval(() => {
+        const em = dataCache.getEmergencyInfo(currentAddress);
+        if (!em.isEmergencyActive) {
+          api.getSettings().then(res => {
+            if (res.data) {
+              dataCache.setSettings(res.data);
+              setStoreSettings(res.data);
+            }
+          }).catch(() => {});
+        }
+      }, 10000);
+
+      return () => clearInterval(interval);
+    }, [user, currentAddress])
   );
 
   const onRefresh = useCallback(() => {

@@ -1,4 +1,7 @@
 package com.r2cart
+import android.content.res.Configuration
+import expo.modules.ApplicationLifecycleDispatcher
+import expo.modules.ExpoReactHostFactory
 
 import android.app.Application
 import android.app.NotificationChannel
@@ -14,7 +17,7 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 class MainApplication : Application(), ReactApplication {
 
   override val reactHost: ReactHost by lazy {
-    getDefaultReactHost(
+    ExpoReactHostFactory.getDefaultReactHost(
       context = applicationContext,
       packageList =
         PackageList(this).packages.apply {
@@ -28,6 +31,7 @@ class MainApplication : Application(), ReactApplication {
     super.onCreate()
     createNotificationChannels()
     loadReactNative(this)
+    ApplicationLifecycleDispatcher.onApplicationCreate(this)
   }
 
   private fun createNotificationChannels() {
@@ -46,5 +50,10 @@ class MainApplication : Application(), ReactApplication {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
       notificationManager.createNotificationChannel(channel)
     }
+  }
+
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)
   }
 }

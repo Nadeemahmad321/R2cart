@@ -201,18 +201,57 @@ class DataCacheService {
     const emSettings = s.emergencySettings || {};
     const isOrderPaused = Boolean(s.isOrderPaused);
 
-    const isPausedByPolicy = Boolean(pause.isPaused);
-    const isPausedByEffective =
-      effective.storeStatus === 'EMERGENCY_PAUSED' || Boolean(effective.isEmergencyActive);
-    const isPausedByEmSettings = Boolean(emSettings.isActive);
+    const rawEndTime =
+      effective.emergencyDetails?.endTime || emSettings.endTime || pause.resumesAt;
 
-    const isEmergencyActive =
-      isPausedByPolicy || isPausedByEffective || isPausedByEmSettings || isOrderPaused;
+    // 1. Strict time-based auto-expiration check
+    let isExpiredByTime = false;
+    if (rawEndTime) {
+      try {
+        const endDate = new Date(rawEndTime);
+        if (!isNaN(endDate.getTime()) && Date.now() >= endDate.getTime()) {
+          isExpiredByTime = true;
+        }
+      } catch {}
+    }
+
+    // 2. Authoritative emergency active evaluation
+    let isEmergencyActive = false;
+    if (!isExpiredByTime) {
+      if (effective && typeof effective === 'object' && ('isEmergencyActive' in effective || 'storeStatus' in effective)) {
+        // Backend's effectiveStatus is the single source of truth
+        isEmergencyActive = Boolean(effective.isEmergencyActive) || effective.storeStatus === 'EMERGENCY_PAUSED';
+      } else {
+        // Fallback when effectiveStatus is not populated
+        isEmergencyActive = Boolean(pause.isPaused) || Boolean(emSettings.isActive) || isOrderPaused;
+      }
+    }
+
+    const holidayDates = Array.isArray(pause.holidayDates) ? pause.holidayDates : [];
+
+    // If emergency is expired or inactive, return clean normal operational state immediately
+    if (!isEmergencyActive) {
+      return {
+        isEmergencyActive: false,
+        isStorePaused: false,
+        isImmediatePaused: Boolean(effective && effective.allowImmediateOrders === false),
+        isScheduledPaused: Boolean(effective && effective.allowScheduledOrders === false),
+        isAreaSuspended: false,
+        emergencyType: null,
+        title: '',
+        message: '',
+        resumesAtLabel: null,
+        affectedVillageIds: [],
+        canPlaceOrder: true,
+        blockReason: undefined,
+        holidayDates,
+      };
+    }
 
     const rawType =
       emSettings.type ||
       effective.emergencyDetails?.type ||
-      (isPausedByPolicy ? 'ALL_ORDERS' : isOrderPaused ? 'ALL_ORDERS' : null);
+      (pause.isPaused ? 'ALL_ORDERS' : isOrderPaused ? 'ALL_ORDERS' : null);
 
     const emergencyType:
       | 'ALL_ORDERS'
@@ -220,7 +259,7 @@ class DataCacheService {
       | 'SCHEDULED_ONLY'
       | 'SELECTED_AREAS'
       | 'STORE_CLOSE'
-      | null = rawType || (isEmergencyActive ? 'ALL_ORDERS' : null);
+      | null = rawType || 'ALL_ORDERS';
 
     const rawVillages =
       emSettings.affectedVillageIds || effective.emergencyDetails?.affectedVillageIds || [];
@@ -229,7 +268,7 @@ class DataCacheService {
       : [];
 
     let isAreaSuspended = false;
-    if (isEmergencyActive && emergencyType === 'SELECTED_AREAS' && selectedAddress) {
+    if (emergencyType === 'SELECTED_AREAS' && selectedAddress) {
       const addrArea = String(selectedAddress.area || '').trim().toLowerCase();
       const addrVillage = String(
         selectedAddress.village || selectedAddress.villageName || ''
@@ -253,15 +292,13 @@ class DataCacheService {
     }
 
     const nextOpening = effective.nextAvailableOpening;
-    const rawEndTime =
-      effective.emergencyDetails?.endTime || emSettings.endTime || pause.resumesAt;
     let resumesAtLabel: string | null = null;
     if (nextOpening?.label) {
       resumesAtLabel = String(nextOpening.label).trim();
     } else if (rawEndTime) {
       try {
         const date = new Date(rawEndTime);
-        if (!isNaN(date.getTime())) {
+        if (!isNaN(date.getTime()) && date.getTime() > Date.now()) {
           resumesAtLabel = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
         }
       } catch {}
@@ -277,10 +314,9 @@ class DataCacheService {
     const message = (rawReason || '').trim() || 'Store operations are temporarily adjusted due to emergency conditions.';
 
     const isStorePaused =
-      isEmergencyActive &&
-      (emergencyType === 'ALL_ORDERS' ||
-        emergencyType === 'STORE_CLOSE' ||
-        effective.storeStatus === 'EMERGENCY_PAUSED');
+      emergencyType === 'ALL_ORDERS' ||
+      emergencyType === 'STORE_CLOSE' ||
+      effective.storeStatus === 'EMERGENCY_PAUSED';
 
     const isImmediatePaused =
       isStorePaused ||
@@ -313,8 +349,6 @@ class DataCacheService {
       const areaName = selectedAddress?.village || selectedAddress?.villageName || selectedAddress?.area || 'your area';
       blockReason = `Deliveries to ${areaName} are temporarily suspended due to emergency conditions. Please choose another address or check back later.`;
     }
-
-    const holidayDates = Array.isArray(pause.holidayDates) ? pause.holidayDates : [];
 
     return {
       isEmergencyActive,

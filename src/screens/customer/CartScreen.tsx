@@ -293,6 +293,9 @@ export const CartScreen = ({ route, navigation }: any) => {
   const fetchStoreSchedule = useCallback(async () => {
     try {
       const res = await api.getSettings();
+      if (res.data) {
+        dataCache.setSettings(res.data);
+      }
       const effective = res.data?.effectiveStatus;
       const adv = Number(effective?.advanceBookingDays || res.data?.advanceBookingDays || 4);
       if (adv > 0) {
@@ -314,6 +317,8 @@ export const CartScreen = ({ route, navigation }: any) => {
         if (!canImmediate) {
           setDeliveryType('SCHEDULED');
           fetchSlots();
+        } else if (canImmediate && !canScheduled) {
+          setDeliveryType('INSTANT');
         }
       }
     } catch {
@@ -531,12 +536,23 @@ export const CartScreen = ({ route, navigation }: any) => {
     }
   }, [appliedCodeFromRoute]);
 
-  // Automatically sync cart and addresses with backend when navigating into CartScreen
+  // Automatically sync cart, store schedule, and addresses with backend when navigating into CartScreen
   useFocusEffect(
     useCallback(() => {
       syncCartWithBackend();
       fetchAddresses(false);
-    }, [syncCartWithBackend, fetchAddresses])
+      fetchStoreSchedule();
+
+      // Periodic check for emergency auto-expiration every 10s while CartScreen is focused
+      const timer = setInterval(() => {
+        const em = dataCache.getEmergencyInfo(selectedAddress);
+        if (!em.isEmergencyActive) {
+          fetchStoreSchedule();
+        }
+      }, 10000);
+
+      return () => clearInterval(timer);
+    }, [syncCartWithBackend, fetchAddresses, fetchStoreSchedule, selectedAddress])
   );
 
   const onPullRefresh = useCallback(async () => {

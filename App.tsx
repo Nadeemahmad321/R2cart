@@ -8,6 +8,7 @@ import { CartProvider } from './src/context/CartContext';
 import { ToastProvider } from './src/context/ToastContext';
 import { FavoritesProvider } from './src/context/FavoritesContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { UpdatePromptModal } from './src/components/common/UpdatePromptModal';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
               <CartProvider>
                 <FavoritesProvider>
                   <RootNavigator />
+                  <UpdatePromptModal />
                 </FavoritesProvider>
               </CartProvider>
             </ToastProvider>

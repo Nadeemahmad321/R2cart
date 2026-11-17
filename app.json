@@ -1,4 +1,28 @@
 {
   "name": "R2Cart",
-  "displayName": "R2Cart"
+  "displayName": "R2Cart",
+  "expo": {
+    "name": "R2Cart",
+    "slug": "r2cart",
+    "version": "1.0.5",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.r2cart"
+    },
+    "ios": {
+      "bundleIdentifier": "com.r2cart"
+    },
+    "runtimeVersion": "1.0.0",
+    "extra": {
+      "eas": {
+        "projectId": "7022375f-74ef-47d2-b2d4-b9dcb40b5fa0"
+      }
+    },
+    "owner": "r2cart",
+    "updates": {
+      "url": "https://u.expo.dev/7022375f-74ef-47d2-b2d4-b9dcb40b5fa0"
+    }
+  }
 }
