@@ -174,14 +174,17 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
         keyExtractor={(item) => `rail_${item.id || 'itm'}`}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        initialNumToRender={5}
-        maxToRenderPerBatch={6}
-        windowSize={5}
-        removeClippedSubviews={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={32}
+        initialNumToRender={3}
+        maxToRenderPerBatch={3}
+        windowSize={3}
+        removeClippedSubviews={Platform.OS === 'android'}
+        getItemLayout={(_, index) => ({
+          length: 156,
+          offset: 156 * index,
+          index,
+        })}
         onEndReached={loadMore}
-        onEndReachedThreshold={1.2}
+        onEndReachedThreshold={0.5}
         renderItem={renderItem}
         ListFooterComponent={renderFooter}
       />

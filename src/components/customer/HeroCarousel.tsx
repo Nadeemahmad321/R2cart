@@ -194,13 +194,25 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = React.memo(({
               <View style={styles.heroVisual}>
                 {mainImg ? (
                   <View style={styles.mainPhotoWrap}>
-                    <Image source={{ uri: optimizeThumb(mainImg, 450) }} style={styles.mainPhotoImg} resizeMode="cover" />
+                    <Image
+                      source={{ uri: optimizeThumb(mainImg, 450) }}
+                      style={styles.mainPhotoImg}
+                      resizeMode="cover"
+                      resizeMethod="resize"
+                      fadeDuration={0}
+                    />
                   </View>
                 ) : null}
 
                 {secImg ? (
                   <View style={styles.floatingProduct}>
-                    <Image source={{ uri: optimizeThumb(secImg, 250) }} style={styles.floatingProductImg} resizeMode="cover" />
+                    <Image
+                      source={{ uri: optimizeThumb(secImg, 250) }}
+                      style={styles.floatingProductImg}
+                      resizeMode="cover"
+                      resizeMethod="resize"
+                      fadeDuration={0}
+                    />
                   </View>
                 ) : null}
 

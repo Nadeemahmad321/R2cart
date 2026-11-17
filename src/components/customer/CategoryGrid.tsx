@@ -104,6 +104,8 @@ export const CategoryGrid: React.FC<CategoryGridProps> = React.memo(({
                       source={{ uri: optimizeThumb(imgUri, 160) }}
                       style={styles.innerImg}
                       resizeMode="cover"
+                      resizeMethod="resize"
+                      fadeDuration={0}
                     />
                   ) : (
                     <Feather name="shopping-bag" size={28} color={Colors.primaryDark} />

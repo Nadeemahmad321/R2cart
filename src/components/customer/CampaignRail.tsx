@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
+  Platform,
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { Colors } from '../../theme/colors';
@@ -60,7 +61,15 @@ export const CampaignRail: React.FC<CampaignRailProps> = React.memo(({
         contentContainerStyle={styles.listContent}
         snapToInterval={CARD_WIDTH + 12}
         decelerationRate="fast"
-        removeClippedSubviews={false}
+        initialNumToRender={2}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        removeClippedSubviews={Platform.OS === 'android'}
+        getItemLayout={(_, index) => ({
+          length: CARD_WIDTH + 12,
+          offset: (CARD_WIDTH + 12) * index,
+          index,
+        })}
         renderItem={({ item, index }) => {
           const bgCol = GRADIENT_COLORS[index % GRADIENT_COLORS.length];
           const ctaText = item.ctaText || 'Claim Offer Now';
@@ -76,6 +85,8 @@ export const CampaignRail: React.FC<CampaignRailProps> = React.memo(({
                   source={{ uri: item.image }}
                   style={styles.cardBgImage}
                   resizeMode="cover"
+                  resizeMethod="resize"
+                  fadeDuration={0}
                 />
               ) : null}
 

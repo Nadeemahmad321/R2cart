@@ -820,7 +820,7 @@ export const HomeScreen = ({ navigation }: any) => {
 
           case 'categoryRails': {
             if (section.comingSoon) return renderComingSoonCard();
-            const maxCats = Number(section.maxCategories) || 8;
+            const maxCats = Math.min(5, Number(section.maxCategories) || 4);
             const allowedCount = deferredReady ? maxCats : Math.min(2, maxCats);
             const railsToRender = allCategoryRails.slice(0, allowedCount);
             return (
@@ -952,6 +952,8 @@ export const HomeScreen = ({ navigation }: any) => {
     tCat,
     tEta,
   ]);
+
+  const listHeaderElement = useMemo(() => renderListHeader(), [renderListHeader]);
 
   return (
     <View style={styles.container}>
@@ -1181,16 +1183,16 @@ export const HomeScreen = ({ navigation }: any) => {
           renderItem={renderProductItem}
           keyExtractor={(item) => String(item.id || 'prod')}
           numColumns={2}
-          ListHeaderComponent={renderListHeader}
+          ListHeaderComponent={listHeaderElement}
           contentContainerStyle={[
             styles.mainListContent,
             { paddingBottom: 110 + insets.bottom },
           ]}
           columnWrapperStyle={styles.productRowWrapper}
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          windowSize={5}
-          removeClippedSubviews={false}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          windowSize={3}
+          removeClippedSubviews={Platform.OS === 'android'}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
           showsVerticalScrollIndicator={false}

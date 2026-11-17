@@ -101,6 +101,7 @@ const ProductMedia: React.FC<ProductMediaProps> = React.memo(({
           source={imageSource}
           style={[styles.productImg, (isOutOfStock || isComingSoon) && styles.productImgDimmed]}
           resizeMode="cover"
+          resizeMethod="resize"
           fadeDuration={0}
         />
       ) : (
@@ -138,6 +139,140 @@ interface ProductCardProps {
   width?: number;
 }
 
+// Isolated PackSelectionModal: Subscribes to `useCart` ONLY when explicitly opened,
+// keeping all 150+ ProductCards completely decoupled from cart state updates!
+const PackSelectionModal: React.FC<{
+  visible: boolean;
+  product: Product;
+  packOptions: any[];
+  onClose: () => void;
+}> = React.memo(({ visible, product, packOptions, onClose }) => {
+  const { getItemQuantity: getCartItemQty, addToCart: cartAdd, removeFromCart: cartRemove } = useCart();
+  const { lang, t, tProd } = useLanguage();
+
+  if (!visible) return null;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        style={styles.packModalBackdrop}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <TouchableOpacity
+          style={styles.packModalSheet}
+          activeOpacity={1}
+          onPress={e => e.stopPropagation()}
+        >
+          <View style={styles.packModalHeader}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={styles.packModalTitle} numberOfLines={1}>
+                {tProd(product)}
+              </Text>
+              <Text style={styles.packModalSub}>
+                {lang === 'hi' ? 'उपलब्ध पैक और यूनिट चुनें' : 'Select available pack size & unit'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.packModalCloseBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x" size={19} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+            {packOptions.map((pack: any, pIdx: number) => {
+              const packId = String(pack.id || product.id);
+              const pQty = getCartItemQty(packId, pack.variantId);
+              const pPrice = Number(pack.price || 0);
+              const pMrp = Number(pack.mrp || pPrice);
+              const pDiscount = pMrp > pPrice ? Math.round(((pMrp - pPrice) / pMrp) * 100) : 0;
+              const pOos = dataCache.isProductOutOfStock(pack, pack.stock);
+
+              return (
+                <View
+                  key={String(pack.id || pack.variantId || pIdx)}
+                  style={[
+                    styles.packOptionRow,
+                    pIdx === packOptions.length - 1 && { borderBottomWidth: 0 },
+                  ]}
+                >
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={styles.packOptionUnit}>{pack.unit || '1 unit'}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                      <Text style={styles.packOptionPrice}>₹{pPrice}</Text>
+                      {pDiscount > 0 && (
+                        <>
+                          <Text style={styles.packOptionMrp}>₹{pMrp}</Text>
+                          <View style={styles.packOptionDiscountBadge}>
+                            <Text style={styles.packOptionDiscountText}>{pDiscount}% OFF</Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                    {pOos && (
+                      <Text style={styles.packOptionOosText}>{t('outOfStock', 'Out of stock')}</Text>
+                    )}
+                  </View>
+
+                  {pOos ? (
+                    <View style={styles.packOptionOosPill}>
+                      <Text style={styles.packOptionOosPillText}>{t('outOfStock', 'OOS')}</Text>
+                    </View>
+                  ) : pQty === 0 ? (
+                    <TouchableOpacity
+                      style={styles.packOptionAddBtn}
+                      activeOpacity={0.8}
+                      onPress={() => cartAdd(pack, pack.variantId)}
+                    >
+                      <Text style={styles.packOptionAddBtnText}>{t('add', 'ADD')} +</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.packOptionStepper}>
+                      <TouchableOpacity
+                        style={styles.packOptionStepperTouch}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        onPress={() => cartRemove(packId, pack.variantId)}
+                      >
+                        <Feather name="minus" size={13} color="#FFFFFF" />
+                      </TouchableOpacity>
+                      <Text style={styles.packOptionStepperVal}>{pQty}</Text>
+                      <TouchableOpacity
+                        style={styles.packOptionStepperTouch}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        onPress={() => cartAdd(pack, pack.variantId)}
+                      >
+                        <Feather name="plus" size={13} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          <TouchableOpacity
+            style={styles.packModalDoneBtn}
+            activeOpacity={0.85}
+            onPress={onClose}
+          >
+            <Text style={styles.packModalDoneBtnText}>{t('done', 'Done')}</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+});
+
 export const ProductCard: React.FC<ProductCardProps> = React.memo(({
   product,
   quantity,
@@ -150,7 +285,6 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
 
   const { t, tProd, lang } = useLanguage();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const { getItemQuantity: getCartItemQty, addToCart: cartAdd, removeFromCart: cartRemove } = useCart();
   const [packModalOpen, setPackModalOpen] = useState(false);
   const [enquiryModalOpen, setEnquiryModalOpen] = useState(false);
 
@@ -167,17 +301,7 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
   const packOptions = useMemo(() => dataCache.getPackOptions(product), [product]);
   const hasMultiplePacks = packOptions.length > 1;
 
-  // Find which pack/variant is currently added in the cart
-  const addedPack = useMemo(() => {
-    if (!hasMultiplePacks) return product;
-    for (const pack of packOptions) {
-      const packId = String(pack.id || product.id);
-      if (getCartItemQty(packId, pack.variantId) > 0) {
-        return pack;
-      }
-    }
-    return packOptions[0] || product;
-  }, [hasMultiplePacks, packOptions, product, getCartItemQty]);
+  const cardStock = product.stock !== undefined ? Number(product.stock) : (packOptions[0]?.stock !== undefined ? Number(packOptions[0].stock) : undefined);
 
   const price = Number(product.price || (product.variants && product.variants[0]?.price) || 0);
   const mrp = Number(product.mrp || (product.variants && product.variants[0]?.mrp) || price);
@@ -215,7 +339,7 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
           onToggleFav={() => toggleFavorite(product)}
           isOutOfStock={isOutOfStock}
           isComingSoon={isComingSoon}
-          stock={addedPack?.stock !== undefined ? Number(addedPack.stock) : (product.stock !== undefined ? Number(product.stock) : undefined)}
+          stock={cardStock}
           deliveryScope={product.deliveryScope}
           orderMode={product.orderMode}
         />
@@ -290,8 +414,8 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
                       activeOpacity={0.7}
                       hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
                       onPress={() => {
-                        if (hasMultiplePacks && addedPack) {
-                          cartRemove(String(addedPack.id || product.id), addedPack.variantId);
+                        if (hasMultiplePacks) {
+                          setPackModalOpen(true);
                         } else {
                           onRemove(product.id);
                         }
@@ -305,8 +429,8 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
                       activeOpacity={0.7}
                       hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
                       onPress={() => {
-                        if (hasMultiplePacks && addedPack) {
-                          cartAdd(addedPack, addedPack.variantId);
+                        if (hasMultiplePacks) {
+                          setPackModalOpen(true);
                         } else {
                           onAdd(product);
                         }
@@ -322,125 +446,14 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
         </View>
       </TouchableOpacity>
 
-      {/* Multiple Pack/Unit Choice Modal (Backend Connected) */}
+      {/* Multiple Pack/Unit Choice Modal (Isolated subcomponent) */}
       {hasMultiplePacks && packModalOpen && (
-        <Modal
+        <PackSelectionModal
           visible={packModalOpen}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setPackModalOpen(false)}
-        >
-          <TouchableOpacity
-            style={styles.packModalBackdrop}
-            activeOpacity={1}
-            onPress={() => setPackModalOpen(false)}
-          >
-            <TouchableOpacity
-              style={styles.packModalSheet}
-              activeOpacity={1}
-              onPress={e => e.stopPropagation()}
-            >
-              <View style={styles.packModalHeader}>
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={styles.packModalTitle} numberOfLines={1}>
-                    {tProd(product)}
-                  </Text>
-                  <Text style={styles.packModalSub}>
-                    {lang === 'hi' ? 'उपलब्ध पैक और यूनिट चुनें' : 'Select available pack size & unit'}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => setPackModalOpen(false)}
-                  style={styles.packModalCloseBtn}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Feather name="x" size={19} color="#64748B" />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-                {packOptions.map((pack: any, pIdx: number) => {
-                  const packId = String(pack.id || product.id);
-                  const pQty = getCartItemQty(packId, pack.variantId);
-                  const pPrice = Number(pack.price || 0);
-                  const pMrp = Number(pack.mrp || pPrice);
-                  const pDiscount = pMrp > pPrice ? Math.round(((pMrp - pPrice) / pMrp) * 100) : 0;
-                  const pOos = dataCache.isProductOutOfStock(pack, pack.stock);
-
-                  return (
-                    <View
-                      key={String(pack.id || pack.variantId || pIdx)}
-                      style={[
-                        styles.packOptionRow,
-                        pIdx === packOptions.length - 1 && { borderBottomWidth: 0 },
-                      ]}
-                    >
-                      <View style={{ flex: 1, paddingRight: 10 }}>
-                        <Text style={styles.packOptionUnit}>{pack.unit || '1 unit'}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
-                          <Text style={styles.packOptionPrice}>₹{pPrice}</Text>
-                          {pDiscount > 0 && (
-                            <>
-                              <Text style={styles.packOptionMrp}>₹{pMrp}</Text>
-                              <View style={styles.packOptionDiscountBadge}>
-                                <Text style={styles.packOptionDiscountText}>{pDiscount}% OFF</Text>
-                              </View>
-                            </>
-                          )}
-                        </View>
-                        {pOos && (
-                          <Text style={styles.packOptionOosText}>{t('outOfStock', 'Out of stock')}</Text>
-                        )}
-                      </View>
-
-                      {pOos ? (
-                        <View style={styles.packOptionOosPill}>
-                          <Text style={styles.packOptionOosPillText}>{t('outOfStock', 'OOS')}</Text>
-                        </View>
-                      ) : pQty === 0 ? (
-                        <TouchableOpacity
-                          style={styles.packOptionAddBtn}
-                          activeOpacity={0.8}
-                          onPress={() => cartAdd(pack, pack.variantId)}
-                        >
-                          <Text style={styles.packOptionAddBtnText}>{t('add', 'ADD')} +</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <View style={styles.packOptionStepper}>
-                          <TouchableOpacity
-                            style={styles.packOptionStepperTouch}
-                            activeOpacity={0.7}
-                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                            onPress={() => cartRemove(packId, pack.variantId)}
-                          >
-                            <Feather name="minus" size={13} color="#FFFFFF" />
-                          </TouchableOpacity>
-                          <Text style={styles.packOptionStepperVal}>{pQty}</Text>
-                          <TouchableOpacity
-                            style={styles.packOptionStepperTouch}
-                            activeOpacity={0.7}
-                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                            onPress={() => cartAdd(pack, pack.variantId)}
-                          >
-                            <Feather name="plus" size={13} color="#FFFFFF" />
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </ScrollView>
-
-              <TouchableOpacity
-                style={styles.packModalDoneBtn}
-                activeOpacity={0.85}
-                onPress={() => setPackModalOpen(false)}
-              >
-                <Text style={styles.packModalDoneBtnText}>{t('done', 'Done')}</Text>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </Modal>
+          product={product}
+          packOptions={packOptions}
+          onClose={() => setPackModalOpen(false)}
+        />
       )}
 
       {/* Product Enquiry Modal */}
