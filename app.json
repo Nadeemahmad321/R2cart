@@ -4,7 +4,7 @@
   "expo": {
     "name": "R2Cart",
     "slug": "r2cart",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
