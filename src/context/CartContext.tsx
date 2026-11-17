@@ -14,7 +14,7 @@ interface CartContextType {
   deleteItem: (productId: string, variantId?: string) => void;
   updateQuantity: (productId: string, quantity: number, variantId?: string) => void;
   clearCart: () => void;
-  getItemQuantity: (productId: string, variantId?: string) => number;
+  getItemQuantity: (productId: string, variantId?: string, exactOnly?: boolean) => number;
   syncCartWithBackend: () => Promise<void>;
   isSyncing: boolean;
   isInitialized: boolean;
@@ -189,31 +189,48 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addToCart = useCallback(
     async (product: Product, variantId?: string) => {
-      const v = variantId ? product.variants?.find(x => x.id === variantId) : undefined;
+      let effectiveProduct = product;
+      let effectiveVariantId = variantId;
+
+      // If variant was not in product.variants, it might be a sibling product in dataCache!
+      if (variantId && !product.variants?.some(x => x.id === variantId)) {
+        const sibling = dataCache.getProductById(variantId);
+        if (sibling) {
+          effectiveProduct = sibling;
+          effectiveVariantId = undefined;
+        }
+      }
+
+      const v = effectiveVariantId ? effectiveProduct.variants?.find(x => x.id === effectiveVariantId) : undefined;
 
       // Defense in depth: Check out-of-stock and coming-soon status
-      if (dataCache.isProductComingSoon(product)) {
+      if (dataCache.isProductComingSoon(effectiveProduct)) {
         notify('This product is coming soon and cannot be ordered yet', 'error');
         return;
       }
-      if (dataCache.isProductOutOfStock(product, v ? v.stock : undefined)) {
+      if (dataCache.isProductOutOfStock(effectiveProduct, v ? v.stock : undefined)) {
         notify('This product is out of stock', 'error');
         return;
       }
-      if (product.orderMode === 'CONTACT_REQUEST') {
+      if (effectiveProduct.orderMode === 'CONTACT_REQUEST') {
         notify('This item is available via enquiry only. Please tap Enquire.', 'info');
         return;
       }
 
       const currentItems = itemsRef.current;
-      const price = v ? v.price : (product.price || 0);
-      const mrp = v ? v.mrp : (product.mrp || price);
-      const unit = v ? (v.unit || v.weight || '') : (product.unit || '');
-      const img = product.imageUrl || (product.images && product.images[0]) || '';
+      const price = v ? v.price : (effectiveProduct.price || 0);
+      const mrp = v ? v.mrp : (effectiveProduct.mrp || price);
+      const unit = v ? (v.unit || v.weight || '') : (effectiveProduct.unit || '');
+      const img = effectiveProduct.imageUrl || (effectiveProduct.images && effectiveProduct.images[0]) || '';
 
       const isMatch = (item: CartItem) => {
-        const prodMatch = item.productId === product.id || item.id === product.id || item.id === `${product.id}_default`;
-        const varMatch = variantId ? item.variantId === variantId : (!item.variantId || item.variantId === 'default');
+        const prodMatch =
+          item.productId === effectiveProduct.id ||
+          item.id === effectiveProduct.id ||
+          item.id === `${effectiveProduct.id}_default`;
+        const varMatch = effectiveVariantId
+          ? item.variantId === effectiveVariantId
+          : (!item.variantId || item.variantId === 'default');
         return prodMatch && varMatch;
       };
 
@@ -221,8 +238,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const availableStock =
         v?.stock !== undefined
           ? Number(v.stock)
-          : product.stock !== undefined
-          ? Number(product.stock)
+          : effectiveProduct.stock !== undefined
+          ? Number(effectiveProduct.stock)
           : 999;
       const currentQty = existingIndex > -1 ? currentItems[existingIndex].quantity : 0;
       if (currentQty + 1 > availableStock) {
@@ -238,27 +255,27 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         nextItems[existingIndex] = { ...nextItems[existingIndex], quantity: newQty };
       } else {
         const newItem: CartItem = {
-          id: `${product.id}_${variantId || 'default'}`,
-          productId: product.id,
-          variantId,
-          name: product.name,
+          id: `${effectiveProduct.id}_${effectiveVariantId || 'default'}`,
+          productId: effectiveProduct.id,
+          variantId: effectiveVariantId,
+          name: effectiveProduct.name,
           unit,
           price,
           mrp,
           imageUrl: typeof img === 'string' ? img : ((img as any)?.url || ''),
           quantity: 1,
-          stock: v?.stock !== undefined ? v.stock : product.stock,
-          status: product.status,
-          isSoon: (product as any).isSoon,
-          comingSoon: (product as any).comingSoon,
-          categorySlug: product.categorySlug || (typeof product.category === 'string' ? product.category : product.category?.slug),
-          deliveryScope: product.deliveryScope || 'LOCAL',
-          orderMode: product.orderMode || 'DIRECT_ORDER',
-          shippingFee: product.shippingFee ? Number(product.shippingFee) : undefined,
-          shippingSoloOnly: Boolean(product.shippingSoloOnly),
-          shippingMinOtherCartValue: product.shippingMinOtherCartValue ? Number(product.shippingMinOtherCartValue) : undefined,
-          minOrderQty: Math.max(1, Number(product.minOrderQty) || 1),
-          dietaryPreference: product.dietaryPreference || undefined,
+          stock: v?.stock !== undefined ? v.stock : effectiveProduct.stock,
+          status: effectiveProduct.status,
+          isSoon: (effectiveProduct as any).isSoon,
+          comingSoon: (effectiveProduct as any).comingSoon,
+          categorySlug: effectiveProduct.categorySlug || (typeof effectiveProduct.category === 'string' ? effectiveProduct.category : effectiveProduct.category?.slug),
+          deliveryScope: effectiveProduct.deliveryScope || 'LOCAL',
+          orderMode: effectiveProduct.orderMode || 'DIRECT_ORDER',
+          shippingFee: effectiveProduct.shippingFee ? Number(effectiveProduct.shippingFee) : undefined,
+          shippingSoloOnly: Boolean(effectiveProduct.shippingSoloOnly),
+          shippingMinOtherCartValue: effectiveProduct.shippingMinOtherCartValue ? Number(effectiveProduct.shippingMinOtherCartValue) : undefined,
+          minOrderQty: Math.max(1, Number(effectiveProduct.minOrderQty) || 1),
+          dietaryPreference: effectiveProduct.dietaryPreference || undefined,
         };
         newQty = 1;
         nextItems = [...currentItems, newItem];
@@ -410,7 +427,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [notify]);
 
-  const getItemQuantity = useCallback((productId: string, variantId?: string): number => {
+  const getItemQuantity = useCallback((productId: string, variantId?: string, exactOnly?: boolean): number => {
     const cleanProdId = String(productId || '').replace(/_default$/, '').trim();
     if (!cleanProdId) return 0;
 
@@ -425,17 +442,26 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return match ? match.quantity : 0;
     }
 
-    // 2. Product-level total quantity check (sums all variants of this product in cart)
+    // 2. Exact product-level match (cleanProdId matches item.productId or item.id)
     const exactMatches = itemsRef.current.filter(item => {
       const itemCleanId = String(item.productId || item.id || '').replace(/_default$/, '').trim();
-      return item.productId === cleanProdId || item.id === cleanProdId || itemCleanId === cleanProdId;
+      const prodMatch = item.productId === cleanProdId || item.id === cleanProdId || itemCleanId === cleanProdId;
+      if (exactOnly) {
+        return prodMatch && (!item.variantId || item.variantId === 'default');
+      }
+      return prodMatch;
     });
 
     if (exactMatches.length > 0) {
       return exactMatches.reduce((sum, itm) => sum + (Number(itm.quantity) || 0), 0);
     }
 
-    // 3. Sibling variant match by variantGroupId
+    // If exactOnly is requested, NEVER fall back to sibling summation!
+    if (exactOnly) {
+      return 0;
+    }
+
+    // 3. Sibling variant match by variantGroupId (ONLY for home screen cards where exactOnly is not true)
     const cached = dataCache.getProductById(cleanProdId);
     if (cached?.variantGroupId) {
       const siblingItems = itemsRef.current.filter(i => {

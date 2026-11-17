@@ -189,12 +189,17 @@ const PackSelectionModal: React.FC<{
 
           <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
             {packOptions.map((pack: any, pIdx: number) => {
-              const packProdId = String(pack.productId || product.id);
-              const pQty = getCartItemQty(packProdId, pack.variantId);
+              const isEmbeddedVariant = Boolean(pack.variantId);
+              const targetProduct = isEmbeddedVariant ? product : pack;
+              const targetProdId = String(isEmbeddedVariant ? (pack.productId || product.id) : (pack.id || product.id));
+              const targetVariantId = isEmbeddedVariant ? pack.variantId : undefined;
+
+              // Pass exactOnly = true so checking pack quantity never aggregates siblings under variantGroupId
+              const pQty = getCartItemQty(targetProdId, targetVariantId, true);
               const pPrice = Number(pack.price || 0);
               const pMrp = Number(pack.mrp || pPrice);
               const pDiscount = pMrp > pPrice ? Math.round(((pMrp - pPrice) / pMrp) * 100) : 0;
-              const pOos = dataCache.isProductOutOfStock(pack, pack.stock);
+              const pOos = dataCache.isProductOutOfStock(targetProduct, pack.stock);
 
               return (
                 <View
@@ -230,7 +235,7 @@ const PackSelectionModal: React.FC<{
                     <TouchableOpacity
                       style={styles.packOptionAddBtn}
                       activeOpacity={0.8}
-                      onPress={() => cartAdd(product, pack.variantId)}
+                      onPress={() => cartAdd(targetProduct, targetVariantId)}
                     >
                       <Text style={styles.packOptionAddBtnText}>{t('add', 'ADD')} +</Text>
                     </TouchableOpacity>
@@ -240,7 +245,7 @@ const PackSelectionModal: React.FC<{
                         style={styles.packOptionStepperTouch}
                         activeOpacity={0.7}
                         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        onPress={() => cartRemove(packProdId, pack.variantId)}
+                        onPress={() => cartRemove(targetProdId, targetVariantId)}
                       >
                         <Feather name="minus" size={13} color="#FFFFFF" />
                       </TouchableOpacity>
@@ -249,7 +254,7 @@ const PackSelectionModal: React.FC<{
                         style={styles.packOptionStepperTouch}
                         activeOpacity={0.7}
                         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        onPress={() => cartAdd(product, pack.variantId)}
+                        onPress={() => cartAdd(targetProduct, targetVariantId)}
                       >
                         <Feather name="plus" size={13} color="#FFFFFF" />
                       </TouchableOpacity>

@@ -250,6 +250,7 @@ export const CartScreen = ({ route, navigation }: any) => {
 
   // Delivery Mode & Scheduling
   const [deliveryType, setDeliveryType] = useState<'INSTANT' | 'SCHEDULED'>('INSTANT');
+  const userSelectedModeRef = useRef<boolean>(false);
   const [advanceDays, setAdvanceDays] = useState<number>(4);
   const bookingDates = useMemo(() => getAvailableBookingDates(advanceDays), [advanceDays]);
   const [selectedDate, setSelectedDate] = useState<string>(formatYMD(new Date()));
@@ -330,11 +331,13 @@ export const CartScreen = ({ route, navigation }: any) => {
           storeStatus: effective.storeStatus || effective.status,
         });
 
-        // Only switch automatically to SCHEDULED if immediate delivery is restricted
-        if (!canImmediate) {
-          setDeliveryType('SCHEDULED');
-        } else if (canImmediate && !canScheduled) {
-          setDeliveryType('INSTANT');
+        // Only switch automatically to SCHEDULED on initial load if user has not interacted
+        if (!userSelectedModeRef.current) {
+          if (!canImmediate) {
+            setDeliveryType('SCHEDULED');
+          } else if (canImmediate && !canScheduled) {
+            setDeliveryType('INSTANT');
+          }
         }
       }
     } catch {
@@ -347,9 +350,9 @@ export const CartScreen = ({ route, navigation }: any) => {
     return dataCache.getEmergencyInfo(selectedAddress);
   }, [selectedAddress, storeSchedule]);
 
-  // Auto-switch delivery mode once on mount or emergency status update
+  // Auto-switch delivery mode once on mount if user hasn't explicitly selected one
   useEffect(() => {
-    if (emergencyInfo.isEmergencyActive) {
+    if (emergencyInfo.isEmergencyActive && !userSelectedModeRef.current) {
       if (emergencyInfo.isImmediatePaused && !emergencyInfo.isScheduledPaused) {
         setDeliveryType('SCHEDULED');
       } else if (emergencyInfo.isScheduledPaused && !emergencyInfo.isImmediatePaused) {
@@ -525,6 +528,7 @@ export const CartScreen = ({ route, navigation }: any) => {
   useEffect(() => {
     fetchAddresses();
     fetchStoreSchedule();
+    fetchSlots(selectedDate);
 
     api.getCoupons()
       .then(res => {
@@ -1061,21 +1065,20 @@ export const CartScreen = ({ route, navigation }: any) => {
               style={[
                 styles.modeOptionBtn,
                 deliveryType === 'INSTANT' && styles.modeOptionBtnActive,
-                (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) &&
-                  styles.modeOptionBtnDisabled,
               ]}
-              activeOpacity={0.85}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               onPress={() => {
+                userSelectedModeRef.current = true;
+                setDeliveryType('INSTANT');
                 if (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) {
                   notify(
                     emergencyInfo.message ||
                     storeSchedule.statusReason ||
-                    'Instant delivery is currently paused. Please use Scheduled delivery.',
+                    'Instant delivery is currently paused/closed. Orders will be processed when the store opens.',
                     'info'
                   );
-                  return;
                 }
-                setDeliveryType('INSTANT');
               }}
             >
               <View
@@ -1104,9 +1107,6 @@ export const CartScreen = ({ route, navigation }: any) => {
                   style={[
                     styles.modeBtnTitle,
                     deliveryType === 'INSTANT' && styles.modeBtnTitleActive,
-                    (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) && {
-                      color: '#94A3B8',
-                    },
                   ]}
                   numberOfLines={1}
                 >
@@ -1133,8 +1133,6 @@ export const CartScreen = ({ route, navigation }: any) => {
                 style={[
                   styles.radioCircle,
                   deliveryType === 'INSTANT' && styles.radioCircleActive,
-                  (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) &&
-                    styles.radioCircleDisabled,
                 ]}
               >
                 {deliveryType === 'INSTANT' && <Feather name="check" size={9} color="#FFFFFF" />}
@@ -1145,21 +1143,20 @@ export const CartScreen = ({ route, navigation }: any) => {
               style={[
                 styles.modeOptionBtn,
                 deliveryType === 'SCHEDULED' && styles.modeOptionBtnActive,
-                (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) &&
-                  styles.modeOptionBtnDisabled,
               ]}
-              activeOpacity={0.85}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               onPress={() => {
+                userSelectedModeRef.current = true;
+                setDeliveryType('SCHEDULED');
+                fetchSlots(selectedDate);
                 if (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) {
                   notify(
                     emergencyInfo.message ||
                     'Advance scheduled delivery is currently paused.',
                     'info'
                   );
-                  return;
                 }
-                setDeliveryType('SCHEDULED');
-                fetchSlots(selectedDate);
               }}
             >
               <View
@@ -1188,9 +1185,6 @@ export const CartScreen = ({ route, navigation }: any) => {
                   style={[
                     styles.modeBtnTitle,
                     deliveryType === 'SCHEDULED' && styles.modeBtnTitleActive,
-                    (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) && {
-                      color: '#94A3B8',
-                    },
                   ]}
                   numberOfLines={1}
                 >
@@ -1213,8 +1207,6 @@ export const CartScreen = ({ route, navigation }: any) => {
                 style={[
                   styles.radioCircle,
                   deliveryType === 'SCHEDULED' && styles.radioCircleActive,
-                  (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) &&
-                    styles.radioCircleDisabled,
                 ]}
               >
                 {deliveryType === 'SCHEDULED' && <Feather name="check" size={9} color="#FFFFFF" />}
@@ -1818,8 +1810,8 @@ export const CartScreen = ({ route, navigation }: any) => {
             keyExtractor={keyExtractor}
             renderItem={renderCartItem}
             ListEmptyComponent={renderEmptyCart}
-            ListHeaderComponent={validItems.length > 0 ? renderHeader : undefined}
-            ListFooterComponent={validItems.length > 0 ? renderFooter : undefined}
+            ListHeaderComponent={validItems.length > 0 ? renderHeader() : undefined}
+            ListFooterComponent={validItems.length > 0 ? renderFooter() : undefined}
             contentContainerStyle={[
               validItems.length === 0 ? styles.emptyScrollContent : styles.scrollContent,
               { paddingBottom: (validItems.length === 0 ? 40 : 120) + insets.bottom },
