@@ -171,6 +171,7 @@ export const ProductRail: React.FC<ProductRailProps> = React.memo(({
       <FlatList
         horizontal
         data={visibleProducts}
+        extraData={getItemQuantity}
         keyExtractor={(item) => `rail_${item.id || 'itm'}`}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}

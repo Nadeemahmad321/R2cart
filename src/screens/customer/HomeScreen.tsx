@@ -946,6 +946,7 @@ export const HomeScreen = ({ navigation }: any) => {
     addToCart,
     removeFromCart,
     getItemQuantity,
+    totalItems,
     emergencyInfo,
     navigation,
     t,
@@ -953,7 +954,7 @@ export const HomeScreen = ({ navigation }: any) => {
     tEta,
   ]);
 
-  const listHeaderElement = useMemo(() => renderListHeader(), [renderListHeader]);
+  const listHeaderElement = useMemo(() => renderListHeader(), [renderListHeader, totalItems]);
 
   return (
     <View style={styles.container}>
@@ -1180,6 +1181,7 @@ export const HomeScreen = ({ navigation }: any) => {
         /* High-Performance Virtualized Single FlatList */
         <FlatList
           data={displayedGridProducts}
+          extraData={totalItems}
           renderItem={renderProductItem}
           keyExtractor={(item) => String(item.id || 'prod')}
           numColumns={2}

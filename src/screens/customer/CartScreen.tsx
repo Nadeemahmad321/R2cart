@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Platform,
   Alert,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -271,15 +272,15 @@ export const CartScreen = ({ route, navigation }: any) => {
     isOpenNow: true,
   });
 
-  const [slotsCache, setSlotsCache] = useState<Record<string, any[]>>({});
+  const slotsCacheRef = useRef<Record<string, any[]>>({});
   const lastFetchedDateRef = useRef<string | null>(null);
 
   const fetchSlots = useCallback(async (dateStr?: string, forceRefresh = false) => {
     const dateToQuery = dateStr || selectedDate;
     
     // Serve immediately from memory cache if available and not forcing refresh
-    if (!forceRefresh && slotsCache[dateToQuery]) {
-      const cached = slotsCache[dateToQuery];
+    if (!forceRefresh && slotsCacheRef.current[dateToQuery]) {
+      const cached = slotsCacheRef.current[dateToQuery];
       setSlots(cached);
       setSelectedSlot((prev: any) => {
         if (prev && cached.some((s: any) => s.id === prev.id && s.isAvailable)) return prev;
@@ -293,7 +294,7 @@ export const CartScreen = ({ route, navigation }: any) => {
       const res = await api.getDeliverySlots(dateToQuery);
       const list = Array.isArray(res.data) ? res.data : [];
       setSlots(list);
-      setSlotsCache(prev => ({ ...prev, [dateToQuery]: list }));
+      slotsCacheRef.current[dateToQuery] = list;
       setSelectedSlot((prev: any) => {
         if (prev && list.some((s: any) => s.id === prev.id && s.isAvailable)) return prev;
         return list.find((s: any) => s.isAvailable) || null;
@@ -304,7 +305,7 @@ export const CartScreen = ({ route, navigation }: any) => {
     } finally {
       setLoadingSlots(false);
     }
-  }, [selectedDate, slotsCache]);
+  }, [selectedDate]);
 
   const fetchStoreSchedule = useCallback(async () => {
     try {
@@ -346,12 +347,12 @@ export const CartScreen = ({ route, navigation }: any) => {
     return dataCache.getEmergencyInfo(selectedAddress);
   }, [selectedAddress, storeSchedule]);
 
-  // Auto-switch delivery mode only if active emergency strictly prevents the currently selected mode
+  // Auto-switch delivery mode once on mount or emergency status update
   useEffect(() => {
     if (emergencyInfo.isEmergencyActive) {
-      if (emergencyInfo.isImmediatePaused && !emergencyInfo.isScheduledPaused && deliveryType === 'INSTANT') {
+      if (emergencyInfo.isImmediatePaused && !emergencyInfo.isScheduledPaused) {
         setDeliveryType('SCHEDULED');
-      } else if (emergencyInfo.isScheduledPaused && !emergencyInfo.isImmediatePaused && deliveryType === 'SCHEDULED') {
+      } else if (emergencyInfo.isScheduledPaused && !emergencyInfo.isImmediatePaused) {
         setDeliveryType('INSTANT');
       }
     }
@@ -359,7 +360,6 @@ export const CartScreen = ({ route, navigation }: any) => {
     emergencyInfo.isEmergencyActive,
     emergencyInfo.isImmediatePaused,
     emergencyInfo.isScheduledPaused,
-    deliveryType,
   ]);
 
   // Load slots whenever deliveryType becomes SCHEDULED or selectedDate changes
@@ -1064,9 +1064,19 @@ export const CartScreen = ({ route, navigation }: any) => {
                 (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) &&
                   styles.modeOptionBtnDisabled,
               ]}
-              disabled={!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused}
               activeOpacity={0.85}
-              onPress={() => setDeliveryType('INSTANT')}
+              onPress={() => {
+                if (!storeSchedule.allowImmediateOrders || emergencyInfo.isImmediatePaused) {
+                  notify(
+                    emergencyInfo.message ||
+                    storeSchedule.statusReason ||
+                    'Instant delivery is currently paused. Please use Scheduled delivery.',
+                    'info'
+                  );
+                  return;
+                }
+                setDeliveryType('INSTANT');
+              }}
             >
               <View
                 style={[
@@ -1138,11 +1148,18 @@ export const CartScreen = ({ route, navigation }: any) => {
                 (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) &&
                   styles.modeOptionBtnDisabled,
               ]}
-              disabled={!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused}
               activeOpacity={0.85}
               onPress={() => {
+                if (!storeSchedule.allowScheduledOrders || emergencyInfo.isScheduledPaused) {
+                  notify(
+                    emergencyInfo.message ||
+                    'Advance scheduled delivery is currently paused.',
+                    'info'
+                  );
+                  return;
+                }
                 setDeliveryType('SCHEDULED');
-                if (!slots.length) fetchSlots(selectedDate);
+                fetchSlots(selectedDate);
               }}
             >
               <View
@@ -1979,12 +1996,11 @@ export const CartScreen = ({ route, navigation }: any) => {
         animationType="slide"
         onRequestClose={() => setClearModalVisible(false)}
       >
-        <TouchableOpacity
-          style={styles.modalBackdrop}
-          activeOpacity={1}
-          onPress={() => setClearModalVisible(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.clearSheetCard}>
+        <View style={styles.modalBackdrop}>
+          <TouchableWithoutFeedback onPress={() => setClearModalVisible(false)}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+          <View style={styles.clearSheetCard}>
             <View style={styles.sheetHandle} />
             <View style={styles.clearTrashIconCircle}>
               <Feather name="trash-2" size={24} color="#DC2626" />
@@ -2009,8 +2025,8 @@ export const CartScreen = ({ route, navigation }: any) => {
                 <Text style={styles.clearSheetConfirmText}>{t('clearAll', 'Clear All')}</Text>
               </TouchableOpacity>
             </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </View>
   );

@@ -389,7 +389,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const varMatch = variantId ? item.variantId === variantId : (!item.variantId || item.variantId === 'default');
         return prodMatch && varMatch;
       };
-      const existing = currentItems.find(isMatch) || currentItems.find(i => i.productId === cleanProdId || i.id === cleanProdId);
+      const existing = currentItems.find(isMatch) || (!variantId ? currentItems.find(i => i.productId === cleanProdId || i.id === cleanProdId) : undefined);
       if (!existing) return;
       const newQty = existing.quantity - 1;
       updateQuantity(cleanProdId, Math.max(0, newQty), variantId);
@@ -414,35 +414,40 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanProdId = String(productId || '').replace(/_default$/, '').trim();
     if (!cleanProdId) return 0;
 
-    // 1. Exact match
-    const isMatch = (item: CartItem) => {
-      const itemCleanId = String(item.productId || item.id || '').replace(/_default$/, '').trim();
-      const prodMatch =
-        item.productId === cleanProdId ||
-        item.id === cleanProdId ||
-        item.id === `${cleanProdId}_default` ||
-        itemCleanId === cleanProdId;
-      const varMatch = variantId ? item.variantId === variantId : (!item.variantId || item.variantId === 'default');
-      return prodMatch && varMatch;
-    };
-    const found = itemsRef.current.find(isMatch) || itemsRef.current.find(i => i.productId === cleanProdId || i.id === cleanProdId);
-    if (found) return found.quantity;
+    // 1. Specific variant quantity check (used inside Pack Selection Modal)
+    if (variantId && variantId !== 'default') {
+      const match = itemsRef.current.find(item => {
+        const itemCleanId = String(item.productId || item.id || '').replace(/_default$/, '').trim();
+        const prodMatch = item.productId === cleanProdId || item.id === cleanProdId || itemCleanId === cleanProdId;
+        const varMatch = item.variantId === variantId || item.id === variantId || item.id === `${cleanProdId}_${variantId}`;
+        return prodMatch && varMatch;
+      });
+      return match ? match.quantity : 0;
+    }
 
-    // 2. Sibling variant match (if general card check without variantId)
-    if (!variantId) {
-      const cached = dataCache.getProductById(cleanProdId);
-      if (cached?.variantGroupId) {
-        const siblingItems = itemsRef.current.filter(i => {
-          const itemProd = dataCache.getProductById(String(i.productId || i.id || '').replace(/_default$/, '').trim());
-          return itemProd?.variantGroupId === cached.variantGroupId;
-        });
-        if (siblingItems.length > 0) {
-          return siblingItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-        }
+    // 2. Product-level total quantity check (sums all variants of this product in cart)
+    const exactMatches = itemsRef.current.filter(item => {
+      const itemCleanId = String(item.productId || item.id || '').replace(/_default$/, '').trim();
+      return item.productId === cleanProdId || item.id === cleanProdId || itemCleanId === cleanProdId;
+    });
+
+    if (exactMatches.length > 0) {
+      return exactMatches.reduce((sum, itm) => sum + (Number(itm.quantity) || 0), 0);
+    }
+
+    // 3. Sibling variant match by variantGroupId
+    const cached = dataCache.getProductById(cleanProdId);
+    if (cached?.variantGroupId) {
+      const siblingItems = itemsRef.current.filter(i => {
+        const itemProd = dataCache.getProductById(String(i.productId || i.id || '').replace(/_default$/, '').trim());
+        return itemProd?.variantGroupId === cached.variantGroupId;
+      });
+      if (siblingItems.length > 0) {
+        return siblingItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
       }
     }
     return 0;
-  }, []);
+  }, [items]);
 
   // Dynamic delivery settings fetched from backend
   const [deliverySettings, setDeliverySettings] = useState<{ deliveryFee: number; freeDeliveryThreshold: number }>({

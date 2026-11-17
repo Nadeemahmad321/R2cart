@@ -324,9 +324,11 @@ class DataCacheService {
       effective.allowImmediateOrders === false;
 
     const isScheduledPaused =
-      isStorePaused ||
-      emergencyType === 'SCHEDULED_ONLY' ||
-      effective.allowScheduledOrders === false;
+      effective.allowScheduledOrders === true
+        ? false
+        : isStorePaused ||
+          emergencyType === 'SCHEDULED_ONLY' ||
+          effective.allowScheduledOrders === false;
 
     const canPlaceOrder = !isStorePaused && !isAreaSuspended;
 
