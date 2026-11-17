@@ -1,4 +1,5 @@
 <resources>
   <string name="app_name">R2Cart</string>
   <string name="expo_runtime_version">1.0.0</string>
+  <string name="expo_updates_channel_name">production</string>
 </resources>

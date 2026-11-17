@@ -22,8 +22,8 @@ export const UpdatePromptModal: React.FC = () => {
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   const checkForAppUpdate = async () => {
-    // Avoid running check in development/emulator where Updates is not enabled
-    if (__DEV__ || !Updates.isEnabled) {
+    // Check for updates in production or preview builds
+    if (__DEV__) {
       return;
     }
 
